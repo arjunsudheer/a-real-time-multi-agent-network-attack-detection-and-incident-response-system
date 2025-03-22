@@ -1,0 +1,9 @@
+.*venv
+datasets/*/original_dataset
+datasets/*/train.csv
+datasets/*/test.csv
+datasets/*/label_encoder.pkl
+datasets/*/saved_classifier_models
+datasets/*/classifier_metrics
+classifiers/__pycache__
+classifiers_backup

@@ -1,0 +1,17 @@
+--extra-index-url=https://pypi.nvidia.com
+
+pathlib
+numpy
+pandas
+scikit-learn
+xgboost
+joblib
+torch
+torchvision
+torchaudio
+
+cudf-cu12==25.2.*
+dask-cudf-cu12==25.2.*
+cuml-cu12==25.2.*
+
+optuna
