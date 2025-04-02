@@ -15,3 +15,9 @@ dask-cudf-cu12==25.2.*
 cuml-cu12==25.2.*
 
 optuna
+
+langchain
+langchain-community
+langchain-ollama
+faiss-gpu-cu12
+pypdf
