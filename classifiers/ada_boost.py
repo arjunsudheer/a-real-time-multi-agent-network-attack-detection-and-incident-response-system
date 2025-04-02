@@ -7,18 +7,12 @@ import optuna
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
-from decision_tree import DecisionTreeNetworkAttackClassifier
-
 
 class AdaBoostNetworkAttackClassifier:
     def __init__(self, X_train, y_train, dataset):
         self.X_train = X_train
         self.y_train = y_train
         self.dataset = dataset
-
-        self.weak_learner = DecisionTreeNetworkAttackClassifier(
-            X_train, y_train, dataset
-        ).best_clf
 
         # Load an already trained classifier model if it exists
         # Otherwise, create a new classifier model to train
@@ -41,7 +35,6 @@ class AdaBoostNetworkAttackClassifier:
 
             clf = AdaBoostClassifier(
                 random_state=42,
-                estimator=self.weak_learner,
                 n_estimators=n_estimators,
                 learning_rate=learning_rate,
             )
