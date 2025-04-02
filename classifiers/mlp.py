@@ -42,7 +42,7 @@ class MLPNetworkAttackClassifier:
             Path(f"{self.dataset}/saved_classifier_models").mkdir(
                 exist_ok=True, parents=True
             )
-            self.kf = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
+            self.kf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
             self.patience = 7
             self.__train()
 
@@ -66,14 +66,14 @@ class MLPNetworkAttackClassifier:
 
         for train_index, val_index in self.kf.split(self.X_train, self.y_train):
             X_train_fold = torch.tensor(
-                self.X_train[train_index], dtype=torch.float32
+                self.X_train.iloc[train_index].values, dtype=torch.float32
             ).to(self.device)
             y_train_fold = torch.tensor(self.y_train[train_index], dtype=torch.long).to(
                 self.device
             )
-            X_val_fold = torch.tensor(self.X_train[val_index], dtype=torch.float32).to(
-                self.device
-            )
+            X_val_fold = torch.tensor(
+                self.X_train.iloc[val_index].values, dtype=torch.float32
+            ).to(self.device)
             y_val_fold = torch.tensor(self.y_train[val_index], dtype=torch.long).to(
                 self.device
             )
@@ -144,6 +144,7 @@ class MLPNetworkAttackClassifier:
             )
         )
         self.model.eval()
+        X_test = torch.tensor(X_test.values, dtype=torch.float32).to(self.device)
         test_loader = DataLoader(X_test, batch_size=32)
         y_pred = []
 
