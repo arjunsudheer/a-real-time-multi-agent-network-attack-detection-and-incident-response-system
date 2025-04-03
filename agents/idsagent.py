@@ -15,11 +15,20 @@ from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
+import transformers
+from transformers import AutoTokenizer
 
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from classifiers.iot_torch_mlp import MLPClassifier
+
+# Set environment variables to disable warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+
+# Set clean_up_tokenization_spaces globally
+transformers.tokenization_utils_base.CLEAN_UP_TOKENIZATION_SPACES = True
 
 
 class IDSAgent:
@@ -91,7 +100,8 @@ class IDSAgent:
     def initialize_memory(self):
         """Initialize FAISS vector store for memory"""
         self.embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-mpnet-base-v2"
+            model_name="sentence-transformers/all-mpnet-base-v2",
+            model_kwargs={"tokenizer_kwargs": {"clean_up_tokenization_spaces": True}},
         )
 
         # Initialize empty FAISS stores for both memories
@@ -248,6 +258,60 @@ class IDSAgent:
         memory = self.short_term_memory if is_short_term else self.long_term_memory
         return memory.similarity_search(query, k=k)
 
+    def display_traffic_summary(self, samples):
+        """Display a summary of traffic samples"""
+        print("\n=== TRAFFIC SAMPLES TO ANALYZE ===\n")
+
+        for i, sample in enumerate(samples.iterrows(), 1):
+            print(f"{'='*60}")
+            print(f"SAMPLE {i} OF {len(samples)}")
+            print(f"{'='*60}\n")
+
+            # Get the traffic type - handle float labels by converting to int first
+            label_int = int(sample[1]["Label"])  # Convert float to int
+            traffic_type = self.label_encoder.inverse_transform([label_int])[0]
+
+            print("📊 BASIC FLOW INFORMATION:")
+            print(f"🔹 Traffic Type: {traffic_type}")
+            print(
+                f"🔹 Source → Destination: {sample[1]['Src Port']:.0f}:{int(sample[1]['Src IP'])} → {sample[1]['Dst Port']:.0f}:{int(sample[1]['Dst IP'])}"
+            )
+            print(f"🔹 Protocol: {int(sample[1]['Protocol'])}")
+            print(f"🔹 Flow Duration: {sample[1]['Flow Duration']:.2f} microseconds\n")
+
+            print("📦 PACKET INFORMATION:")
+            print(
+                f"🔹 Forward Packets: {int(sample[1]['Total Fwd Packet'])} (avg size: {sample[1]['Fwd Packet Length Mean']:.2f} bytes)"
+            )
+            print(
+                f"🔹 Backward Packets: {int(sample[1]['Total Bwd packets'])} (avg size: {sample[1]['Bwd Packet Length Mean']:.2f} bytes)"
+            )
+            print(
+                f"🔹 Total Length: Fwd={sample[1]['Total Length of Fwd Packet']:.0f} bytes, Bwd={sample[1]['Total Length of Bwd Packet']:.0f} bytes\n"
+            )
+
+            print("📈 FLOW RATES:")
+            print(f"🔹 Flow Rate: {sample[1]['Flow Packets/s']:.2f} packets/s")
+            print(f"🔹 Bytes Rate: {sample[1]['Flow Bytes/s']:.2f} bytes/s")
+            print(f"🔹 Forward Rate: {sample[1]['Fwd Packets/s']:.2f} packets/s")
+            print(f"🔹 Backward Rate: {sample[1]['Bwd Packets/s']:.2f} packets/s\n")
+
+            print("🚩 TCP FLAGS:")
+            print(f"🔹 FIN: {int(sample[1]['FIN Flag Count'])}")
+            print(f"🔹 SYN: {int(sample[1]['SYN Flag Count'])}")
+            print(f"🔹 RST: {int(sample[1]['RST Flag Count'])}")
+            print(f"🔹 PSH: {int(sample[1]['PSH Flag Count'])}")
+            print(f"🔹 ACK: {int(sample[1]['ACK Flag Count'])}")
+            print(f"🔹 URG: {int(sample[1]['URG Flag Count'])}\n")
+
+            print("⚡ ACTIVITY PATTERN:")
+            print(f"🔹 Active Mean: {sample[1]['Active Mean']:.2f} microseconds")
+            print(f"🔹 Idle Mean: {sample[1]['Idle Mean']:.2f} microseconds")
+
+            print(f"\n{'='*60}\n")
+
+        print("All samples have been displayed.")
+
     def analyze(self, sample_df):
         """Main analysis method"""
         # Store the current sample
@@ -282,9 +346,15 @@ if __name__ == "__main__":
     # Example usage
     import pandas as pd
 
+    # Load and sample test data
     test_df = pd.read_csv("test.csv")
     sample = test_df.sample(n=5, random_state=42)
 
+    # Display traffic samples first
+    agent.display_traffic_summary(sample)
+
+    # Run the analysis
+    print("\nStarting detailed analysis...")
     result = agent.analyze(sample)
     print("\nAgent's Analysis:")
     print(result)

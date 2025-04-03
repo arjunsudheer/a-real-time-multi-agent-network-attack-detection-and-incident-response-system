@@ -284,8 +284,20 @@ def analyze_with_mlp(query: str = "") -> str:
 
 def get_random_samples(n_samples: int = 5) -> pd.DataFrame:
     """Get random samples from test data"""
+    # Load the original scaler used during training
+    original_scaler = joblib.load("scaler.pkl")
+
+    # Load normalized test data
     test_df = pd.read_csv("test.csv")
-    return test_df.sample(n=n_samples, random_state=42)
+    samples = test_df.sample(n=n_samples, random_state=42)
+
+    # Denormalize features (except Label)
+    features_to_denorm = [col for col in samples.columns if col != "Label"]
+    samples[features_to_denorm] = original_scaler.inverse_transform(
+        samples[features_to_denorm]
+    )
+
+    return samples
 
 
 # Create tools for the agent
@@ -419,54 +431,72 @@ def analyze_traffic():
 
 def display_traffic_summary(samples):
     """Display a meaningful summary of traffic samples focusing on key network features"""
-    print("\n=== TRAFFIC SAMPLES ANALYSIS ===")
+    print("\n=== TRAFFIC SAMPLES TO ANALYZE ===")
 
-    # Key features to display
-    key_features = [
-        "Protocol",
-        "Flow Duration",
-        "Total Fwd Packets",
-        "Total Backward Packets",
-        "Total Length of Fwd Packets",
-        "Total Length of Bwd Packets",
-        "Flow Bytes/s",
-        "Flow Packets/s",
-        "Flow IAT Mean",
-        "Fwd IAT Mean",
-        "Bwd IAT Mean",
-        "Fwd PSH Flags",
-        "Bwd PSH Flags",
-        "Fwd URG Flags",
-        "Bwd URG Flags",
-        "Active Mean",
-        "Idle Mean",
-    ]
-
-    print("\nKey Network Characteristics:")
     for i, (_, sample) in enumerate(samples.iterrows(), 1):
-        print(f"\nSample {i}:")
-        print("----------------------------------------")
-        for feature in key_features:
-            if feature in sample:
-                value = sample[feature]
-                # Format large numbers for better readability
-                if isinstance(value, (int, float)):
-                    if value > 1000000:
-                        print(f"{feature}: {value:.2e}")
-                    else:
-                        print(f"{feature}: {value:.2f}")
-                else:
-                    print(f"{feature}: {value}")
+        print(f"\n{'='*60}")
+        print(f"SAMPLE {i} OF {len(samples)}")
+        print(f"{'='*60}")
 
-        # Show actual label
-        label = analyzer.label_encoder.inverse_transform([sample["Label"]])[0]
-        print(f"\nActual Traffic Type: {label}")
-        print("----------------------------------------")
+        # Get the traffic type - handle float labels by converting to int first
+        label_int = int(sample["Label"])  # Convert float to int
+        traffic_type = analyzer.label_encoder.inverse_transform([label_int])[0]
+
+        # Basic Flow Information
+        print("\n📊 BASIC FLOW INFORMATION:")
+        print(f"🔹 Traffic Type: {traffic_type}")
+        print(
+            f"🔹 Source → Destination: {sample['Src IP']:.0f}:{int(sample['Src Port'])} → {sample['Dst IP']:.0f}:{int(sample['Dst Port'])}"
+        )
+        print(f"🔹 Protocol: {int(sample['Protocol'])}")
+        print(f"🔹 Flow Duration: {sample['Flow Duration']:.2f} microseconds")
+
+        # Packet Information
+        print("\n📦 PACKET INFORMATION:")
+        print(
+            f"🔹 Forward Packets: {int(sample['Total Fwd Packet'])} (avg size: {sample['Fwd Packet Length Mean']:.2f} bytes)"
+        )
+        print(
+            f"🔹 Backward Packets: {int(sample['Total Bwd packets'])} (avg size: {sample['Bwd Packet Length Mean']:.2f} bytes)"
+        )
+        print(
+            f"🔹 Total Length: Fwd={sample['Total Length of Fwd Packet']:.0f} bytes, Bwd={sample['Total Length of Bwd Packet']:.0f} bytes"
+        )
+
+        # Flow Rates
+        print("\n📈 FLOW RATES:")
+        print(f"🔹 Flow Rate: {sample['Flow Packets/s']:.2f} packets/s")
+        print(f"🔹 Bytes Rate: {sample['Flow Bytes/s']:.2f} bytes/s")
+        print(f"🔹 Forward Rate: {sample['Fwd Packets/s']:.2f} packets/s")
+        print(f"🔹 Backward Rate: {sample['Bwd Packets/s']:.2f} packets/s")
+
+        # TCP Flags
+        print("\n🚩 TCP FLAGS:")
+        print(f"🔹 FIN: {int(sample['FIN Flag Count'])}")
+        print(f"🔹 SYN: {int(sample['SYN Flag Count'])}")
+        print(f"🔹 RST: {int(sample['RST Flag Count'])}")
+        print(f"🔹 PSH: {int(sample['PSH Flag Count'])}")
+        print(f"🔹 ACK: {int(sample['ACK Flag Count'])}")
+        print(f"🔹 URG: {int(sample['URG Flag Count'])}")
+
+        # Activity Pattern
+        print("\n⚡ ACTIVITY PATTERN:")
+        print(f"🔹 Active Mean: {sample['Active Mean']:.2f} microseconds")
+        print(f"🔹 Idle Mean: {sample['Idle Mean']:.2f} microseconds")
+
+        print(f"\n{'='*60}\n")
+
+    print("All samples have been displayed.")
 
 
 if __name__ == "__main__":
     # Get and display traffic samples first
     current_samples = get_random_samples(5)
+
+    # Print column names to see what we're working with
+    print("\nAvailable columns:")
+    print(current_samples.columns.tolist())
+
     display_traffic_summary(current_samples)
 
     print("\nLoading models and starting analysis...")
