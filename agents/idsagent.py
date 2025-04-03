@@ -2,21 +2,16 @@ import os
 import sys
 import torch
 import joblib
-import numpy as np
 from pathlib import Path
-from typing import List, Dict, Any
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_community.retrievers import ArxivRetriever
 from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 import transformers
-from transformers import AutoTokenizer
 
 # Add the current directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
