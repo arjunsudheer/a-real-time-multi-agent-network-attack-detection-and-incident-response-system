@@ -9,6 +9,7 @@ classifiers/__pycache__
 classifiers_backup
 
 .env
+memory/
 long_term_memory.json
 
 __pycache__
