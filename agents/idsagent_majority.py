@@ -100,9 +100,35 @@ class IDSAgent:
             model_kwargs={"tokenizer_kwargs": {"clean_up_tokenization_spaces": True}},
         )
 
-        # Initialize empty FAISS stores for both memories
-        self.short_term_memory = FAISS.from_texts(["Initial memory"], self.embeddings)
-        self.long_term_memory = FAISS.from_texts(["Initial memory"], self.embeddings)
+        # Create memory directory if it doesn't exist
+        memory_dir = Path("memory")
+        memory_dir.mkdir(exist_ok=True)
+
+        # Paths for memory files
+        short_term_path = memory_dir / "short_term_memory"
+        long_term_path = memory_dir / "long_term_memory"
+
+        # Initialize or load short-term memory
+        if short_term_path.exists():
+            self.short_term_memory = FAISS.load_local(
+                str(short_term_path), self.embeddings
+            )
+        else:
+            self.short_term_memory = FAISS.from_texts(
+                ["Initial memory"], self.embeddings
+            )
+            self.short_term_memory.save_local(str(short_term_path))
+
+        # Initialize or load long-term memory
+        if long_term_path.exists():
+            self.long_term_memory = FAISS.load_local(
+                str(long_term_path), self.embeddings
+            )
+        else:
+            self.long_term_memory = FAISS.from_texts(
+                ["Initial memory"], self.embeddings
+            )
+            self.long_term_memory.save_local(str(long_term_path))
 
     def initialize_tools(self):
         """Initialize search and knowledge retrieval tools"""
@@ -317,6 +343,12 @@ class IDSAgent:
         """Update either short-term or long-term memory"""
         memory = self.short_term_memory if is_short_term else self.long_term_memory
         memory.add_texts([observation])
+
+        # Save to disk
+        memory_path = Path("memory") / (
+            "short_term_memory" if is_short_term else "long_term_memory"
+        )
+        memory.save_local(str(memory_path))
 
     def query_memory(self, query: str, is_short_term: bool = True, k: int = 5):
         """Query either short-term or long-term memory"""
