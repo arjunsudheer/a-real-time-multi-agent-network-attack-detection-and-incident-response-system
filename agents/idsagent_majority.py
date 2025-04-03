@@ -2,6 +2,7 @@ import os
 import sys
 import torch
 import joblib
+import numpy as np
 from pathlib import Path
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_community.tools import DuckDuckGoSearchRun
@@ -111,19 +112,13 @@ class IDSAgent:
         # Initialize arXiv retriever
         self.arxiv_retriever = ArxivRetriever()
 
-        # Create classifier tools
-        classifier_tools = []
-        for model_name in self.models.keys():
-            classifier_tools.append(
-                Tool(
-                    name=f"{model_name.upper()}_Classifier",
-                    func=lambda _="", m=model_name: self.analyze_with_classifier(m),
-                    description=f"Analyzes IoT traffic using {model_name} classifier. No input needed, just call the tool.",
-                )
-            )
-
-        # Create search and knowledge tools
-        self.tools = classifier_tools + [
+        # Create unified classifier tool
+        self.tools = [
+            Tool(
+                name="UnifiedClassifier",
+                func=lambda _="": self.analyze_with_majority_vote(),
+                description="Analyzes IoT traffic using all available classifiers with majority voting while showing individual results. No input needed, just call the tool.",
+            ),
             Tool(
                 name="Search",
                 func=self.search_tool.run,
@@ -242,6 +237,81 @@ class IDSAgent:
                 results.append(f"Sample {i+1}: {pred}")
 
         return "\n".join(results)
+
+    def analyze_with_majority_vote(self) -> str:
+        """Analyze the current sample with all classifiers and perform majority voting"""
+        if self.current_sample is None:
+            return "No sample available for analysis"
+
+        # Store predictions from all classifiers
+        all_predictions = {}
+        all_probabilities = {}
+
+        # Get predictions from each classifier
+        X = self.current_sample.drop("Label", axis=1)
+
+        for classifier_type, model in self.models.items():
+            # Scale features if needed
+            X_scaled = X.copy()
+            if classifier_type in self.scalers:
+                X_scaled = self.scalers[classifier_type].transform(X_scaled)
+
+            # Get predictions
+            if classifier_type == "mlp":
+                X_tensor = torch.FloatTensor(X_scaled).to(self.device)
+                with torch.no_grad():
+                    outputs = model(X_tensor)
+                    probabilities = torch.softmax(outputs, dim=1)
+                    predictions = torch.argmax(probabilities, dim=1)
+                predictions = predictions.cpu().numpy()
+                probabilities = probabilities.cpu().numpy()
+            else:
+                predictions = model.predict(X_scaled)
+                try:
+                    probabilities = model.predict_proba(X_scaled)
+                except:
+                    probabilities = None
+
+            all_predictions[classifier_type] = predictions
+            all_probabilities[classifier_type] = probabilities
+
+        # Format results for each sample
+        final_results = []
+        num_samples = len(self.current_sample)
+
+        for sample_idx in range(num_samples):
+            sample_results = [f"\n=== Sample {sample_idx + 1} Analysis ===\n"]
+
+            # Individual classifier results
+            sample_results.append("Individual Classifier Predictions:")
+            for classifier_type in self.models.keys():
+                pred_idx = all_predictions[classifier_type][sample_idx]
+                pred_class = self.label_encoder.inverse_transform([pred_idx])[0]
+
+                if all_probabilities[classifier_type] is not None:
+                    confidence = all_probabilities[classifier_type][sample_idx][
+                        pred_idx
+                    ]
+                    sample_results.append(
+                        f"🔹 {classifier_type.upper()}: {pred_class} (confidence: {confidence:.2f})"
+                    )
+                else:
+                    sample_results.append(f"🔹 {classifier_type.upper()}: {pred_class}")
+
+            # Majority vote
+            sample_predictions = [pred[sample_idx] for pred in all_predictions.values()]
+            unique_preds, counts = np.unique(sample_predictions, return_counts=True)
+            majority_idx = unique_preds[np.argmax(counts)]
+            majority_class = self.label_encoder.inverse_transform([majority_idx])[0]
+            agreement_ratio = np.max(counts) / len(self.models)
+
+            sample_results.append(f"\nMajority Vote Result:")
+            sample_results.append(f"🎯 Final Prediction: {majority_class}")
+            sample_results.append(f"📊 Agreement Ratio: {agreement_ratio:.2f}")
+
+            final_results.append("\n".join(sample_results))
+
+        return "\n\n".join(final_results)
 
     def update_memory(self, observation: str, is_short_term: bool = True):
         """Update either short-term or long-term memory"""
