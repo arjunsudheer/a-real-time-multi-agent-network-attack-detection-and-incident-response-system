@@ -61,7 +61,6 @@ class AdaBoostNetworkAttackClassifier:
         # Train the final AdaBoost model
         self.best_clf = AdaBoostClassifier(
             random_state=42,
-            estimator=self.weak_learner,
             n_estimators=best_params["n_estimators"],
             learning_rate=best_params["learning_rate"],
         )
