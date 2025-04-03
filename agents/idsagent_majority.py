@@ -111,7 +111,9 @@ class IDSAgent:
         # Initialize or load short-term memory
         if short_term_path.exists():
             self.short_term_memory = FAISS.load_local(
-                str(short_term_path), self.embeddings
+                str(short_term_path),
+                self.embeddings,
+                allow_dangerous_deserialization=True,
             )
         else:
             self.short_term_memory = FAISS.from_texts(
@@ -122,7 +124,9 @@ class IDSAgent:
         # Initialize or load long-term memory
         if long_term_path.exists():
             self.long_term_memory = FAISS.load_local(
-                str(long_term_path), self.embeddings
+                str(long_term_path),
+                self.embeddings,
+                allow_dangerous_deserialization=True,
             )
         else:
             self.long_term_memory = FAISS.from_texts(
