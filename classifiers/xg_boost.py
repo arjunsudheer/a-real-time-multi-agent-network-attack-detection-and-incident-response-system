@@ -33,9 +33,12 @@ class XGBoostNetworkAttackClassifier:
         best_val_score = float("inf")
         best_fold_model = None
 
-        for train_idx, val_idx in self.kf.split(self.X_train, self.y_train):
-            X_train, X_val = self.X_train[train_idx], self.X_train[val_idx]
-            y_train, y_val = self.y_train[train_idx], self.y_train[val_idx]
+        for train_index, val_index in self.kf.split(self.X_train, self.y_train):
+            X_train, X_val = (
+                self.X_train.iloc[train_index].values,
+                self.X_train.iloc[val_index].values,
+            )
+            y_train, y_val = self.y_train[train_index], self.y_train[val_index]
 
             dtrain = xgb.DMatrix(X_train, y_train)
             dval = xgb.DMatrix(X_val, y_val)
@@ -74,7 +77,7 @@ class XGBoostNetworkAttackClassifier:
         )
 
     def predict_network_attack_class(self, X_test):
-        dtest = xgb.DMatrix(X_test)
+        dtest = xgb.DMatrix(X_test.values)
         y_pred_prob = self.clf.predict(dtest)
         y_pred = np.argmax(y_pred_prob, axis=1)
         return y_pred
