@@ -15,3 +15,15 @@ dask-cudf-cu12==25.2.*
 cuml-cu12==25.2.*
 
 optuna
+
+langchain
+langchain-core
+langchain-community
+langchain-google-genai
+langchain-huggingface
+faiss-gpu-cu12
+sentence-transformers
+duckduckgo-search
+arxiv
+python-dotenv
+pydantic
