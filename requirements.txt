@@ -17,7 +17,13 @@ cuml-cu12==25.2.*
 optuna
 
 langchain
+langchain-core
 langchain-community
-langchain-ollama
+langchain-google-genai
+langchain-huggingface
 faiss-gpu-cu12
-pypdf
+sentence-transformers
+duckduckgo-search
+arxiv
+python-dotenv
+pydantic
