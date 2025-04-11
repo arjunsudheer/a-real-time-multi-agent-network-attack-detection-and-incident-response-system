@@ -24,3 +24,5 @@ saved_models
 *.jsonl.gz.part
 *.jsonl.gz.part.1
 *.jsonl.gz.part.2
+
+agents/reports/*.html
