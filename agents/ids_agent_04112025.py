@@ -5,7 +5,15 @@ import joblib
 import numpy as np
 import requests
 import re
+import json
+import webbrowser
+import shutil
 from pathlib import Path
+from datetime import datetime, date
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+import threading
+import socket
+from jinja2 import Environment, FileSystemLoader
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_community.retrievers import ArxivRetriever
@@ -15,9 +23,21 @@ from langchain_core.tools import Tool
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 import transformers
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import JsonOutputParser
+from typing import List, Optional
+import time
+
+# Get the directory containing this file
+AGENT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = AGENT_DIR.parent
+
+# Load environment variables from .env file in project root
+load_dotenv(PROJECT_ROOT / ".env")
 
 # Add the current directory to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(str(PROJECT_ROOT))
 
 from classifiers.iot_torch_mlp import MLPClassifier
 
@@ -29,15 +49,101 @@ os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 transformers.tokenization_utils_base.CLEAN_UP_TOKENIZATION_SPACES = True
 
 
+class CVE(BaseModel):
+    """Schema for a CVE vulnerability"""
+
+    id: str = Field(description="CVE ID in format CVE-YYYY-NNNNN")
+    url: str = Field(description="URL to the NVD database entry")
+    severity: str = Field(description="Severity level (CRITICAL, HIGH, MEDIUM, LOW)")
+    score: str = Field(description="CVSS score")
+    description: str = Field(description="Description of the vulnerability")
+
+
+class SecurityProduct(BaseModel):
+    """Schema for a security product recommendation"""
+
+    name: str = Field(
+        description="Name of the security product or vendor",
+        min_length=2,
+        max_length=100,
+    )
+    type: str = Field(
+        description="Category of security product (e.g., Network Security, Endpoint Protection, SIEM, etc.)",
+        min_length=3,
+        max_length=100,
+    )
+    description: str = Field(
+        description="Detailed description of the product's key security capabilities",
+        min_length=50,
+        max_length=500,
+    )
+    relevance_score: float = Field(
+        description="Score (0-10) indicating relevance to the security need",
+        ge=0.0,
+        le=10.0,
+    )
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "name": "Palo Alto Networks Next-Generation Firewall",
+                    "type": "Network Security",
+                    "description": "Enterprise-grade firewall with advanced threat prevention, intrusion detection, and application-level security features.",
+                    "relevance_score": 9.5,
+                }
+            ]
+        }
+
+
+class ArxivPaper(BaseModel):
+    """Schema for an arXiv research paper"""
+
+    title: str = Field(description="Title of the paper")
+    authors: str = Field(description="Authors of the paper")
+    summary: str = Field(description="Summary/abstract of the paper")
+    url: str = Field(description="URL to the paper on arXiv")
+    published: str = Field(description="Publication date")
+
+
+class SecurityAnalysis(BaseModel):
+    """Schema for complete security analysis output"""
+
+    cves: List[CVE] = Field(description="List of related CVE vulnerabilities")
+    products: List[SecurityProduct] = Field(
+        description="List of recommended security products"
+    )
+    research: List[ArxivPaper] = Field(description="List of relevant research papers")
+
+
 class IDSAgent:
     def __init__(self):
-        # Initialize device
+        # Set up directories
+        self.base_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+        self.templates_dir = self.base_dir / "templates"
+        self.reports_dir = self.base_dir / "reports"
+        self.static_dir = self.reports_dir / "static"
+
+        # Create necessary directories
+        self.reports_dir.mkdir(exist_ok=True)
+        self.static_dir.mkdir(exist_ok=True)
+
+        # Initialize Jinja2 environment
+        self.jinja_env = Environment(
+            loader=FileSystemLoader(str(self.templates_dir)), autoescape=True
+        )
+
+        # Add custom filters
+        def format_datetime(value):
+            if isinstance(value, datetime):
+                return value.strftime("%Y-%m-%d %H:%M:%S UTC")
+            return value
+
+        self.jinja_env.filters["format_datetime"] = format_datetime
+
+        # Initialize other components
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # Store the current sample being analyzed
         self.current_sample = None
-
-        # Initialize models and tools
         self.initialize_classifiers()
         self.initialize_memory()
         self.initialize_tools()
@@ -142,7 +248,11 @@ class IDSAgent:
         self.search_tool = DuckDuckGoSearchRun()
 
         # Initialize arXiv retriever
-        self.arxiv_retriever = ArxivRetriever()
+        self.arxiv_retriever = ArxivRetriever(
+            load_max_docs=5,
+            doc_content_chars_max=None,  # Don't limit content
+            max_retries=3,
+        )
 
         # Create unified classifier tool
         self.tools = [
@@ -158,7 +268,7 @@ class IDSAgent:
             ),
             Tool(
                 name="KnowledgeRetriever",
-                func=self.arxiv_retriever.get_relevant_documents,
+                func=lambda x: self.arxiv_retriever.get_relevant_documents(x),
                 description="Retrieve relevant academic papers about IoT security from arXiv",
             ),
             Tool(
@@ -455,135 +565,749 @@ class IDSAgent:
 
         return response["output"]
 
-    def search_cve(self, query: str) -> str:
-        """Search for CVE vulnerabilities using the NVD API"""
+    def search_cve(self, query: str) -> List[CVE]:
+        """Search for CVE vulnerabilities using the NVD API with structured output"""
         try:
             # NVD API endpoint
-            base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-            
+            base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0/"
+
+            # Get API key from environment variable
+            api_key = os.getenv("NVD_API_KEY")
+
+            # Clean and enhance query
+            clean_query = re.sub(r"[^\w\s-]", "", query)
+            if clean_query.lower() == "icmp flood":
+                search_terms = ["ICMP flood", "ping flood", "ICMP DoS"]
+            elif clean_query.lower() == "benign":
+                return []  # No vulnerabilities for benign traffic
+            else:
+                search_terms = [clean_query, "DoS", "network attack"]
+
+            enhanced_query = " OR ".join(f'"{term}"' for term in search_terms)
+
             # Parameters for the API request
-            params = {
-                "keywordSearch": query,
-                "resultsPerPage": 5  # Limit to 5 most relevant results
-            }
-            
-            # Make the request
-            response = requests.get(base_url, params=params)
-            response.raise_for_status()
-            
-            # Parse the response
-            data = response.json()
-            
-            if data["totalResults"] == 0:
-                return f"No CVE vulnerabilities found for query: {query}"
-            
-            # Format the results
-            results = []
-            for vuln in data["vulnerabilities"]:
-                cve = vuln["cve"]
-                cve_id = cve["id"]
-                description = cve["descriptions"][0]["value"]
-                metrics = cve.get("metrics", {}).get("cvssMetricV31", [{}])[0].get("cvssData", {})
-                severity = metrics.get("baseSeverity", "N/A")
-                score = metrics.get("baseScore", "N/A")
-                
-                results.append(
-                    f"CVE ID: {cve_id}\n"
-                    f"Severity: {severity} (Score: {score})\n"
-                    f"Description: {description}\n"
-                )
-            
-            return "\n\n".join(results)
-            
-        except Exception as e:
-            return f"Error searching CVE database: {str(e)}"
+            params = {"keywordSearch": enhanced_query, "resultsPerPage": 10}
 
-    def get_product_recommendations(self, security_need: str) -> str:
-        """Search for and format industry product recommendations based on security needs"""
-        try:
-            # Use the search tool to find product recommendations
-            search_query = f"best enterprise {security_need} products solutions tools comparison"
-            raw_results = self.search_tool.run(search_query)
+            # Headers including API key if available
+            headers = {"User-Agent": "IDS-Analysis-Tool/1.0"}
+            if api_key:
+                headers["apiKey"] = api_key
 
-            # Extract and format product information
-            products = []
-            
-            # Split into paragraphs
-            paragraphs = raw_results.split('\n\n')
-            
-            # Process each paragraph to find product mentions
-            for paragraph in paragraphs:
-                # Look for product names (typically in title case or all caps)
-                product_matches = re.findall(r'([A-Z][a-zA-Z\d\s]+(?:\s?[A-Z][a-zA-Z\d]+)*)', paragraph)
-                
-                for product in product_matches:
-                    # Skip common non-product capitalized words
-                    if product.strip() in ['The', 'A', 'An', 'This', 'That', 'These', 'Those', 'I', 'You', 'He', 'She', 'It', 'We', 'They']:
-                        continue
-                        
-                    # Extract a relevant description (the sentence containing the product name)
-                    sentences = re.split(r'[.!?]+', paragraph)
-                    description = ""
-                    for sentence in sentences:
-                        if product in sentence:
-                            description = sentence.strip()
-                            break
-                    
-                    if description:
-                        products.append({
-                            'name': product.strip(),
-                            'description': description
-                        })
+            print(f"\nSearching CVEs with query: {enhanced_query}")
 
-            # Remove duplicates while preserving order
-            seen = set()
-            unique_products = []
-            for product in products:
-                if product['name'] not in seen:
-                    seen.add(product['name'])
-                    unique_products.append(product)
-
-            # Format the results
-            if not unique_products:
-                return f"No specific product recommendations found for: {security_need}\n\nTry refining your search terms to be more specific about the type of security solution needed."
-
-            formatted_results = [
-                f"🛡️ Product Recommendations for {security_need}:\n"
-            ]
-
-            for i, product in enumerate(unique_products[:5], 1):  # Limit to top 5 products
-                formatted_results.append(
-                    f"{i}. {product['name']}\n"
-                    f"   📝 {product['description']}\n"
-                )
-
-            formatted_results.append(
-                "\n⚠️ Note: These recommendations are based on web search results. "
-                "Always perform thorough evaluation and testing before implementing any security solution."
+            # Make the request with timeout
+            response = requests.get(
+                base_url, params=params, headers=headers, timeout=10
             )
 
-            return "\n".join(formatted_results)
+            if response.status_code == 200:
+                data = response.json()
+
+                if data.get("totalResults", 0) == 0:
+                    # Try alternative search
+                    return self._get_alternative_vulnerability_data(query)
+
+                cves = []
+                for vuln in data.get("vulnerabilities", [])[:5]:
+                    cve_data = vuln.get("cve", {})
+
+                    # Get CVE ID
+                    cve_id = cve_data.get("id")
+                    if not cve_id or not re.match(r"^CVE-\d{4}-\d{4,7}$", cve_id):
+                        continue
+
+                    # Get metrics
+                    metrics = cve_data.get("metrics", {})
+                    cvss_data = None
+
+                    # Try different CVSS versions
+                    for metric_type in [
+                        "cvssMetricV31",
+                        "cvssMetricV30",
+                        "cvssMetricV2",
+                    ]:
+                        if metric_type in metrics and metrics[metric_type]:
+                            cvss_data = metrics[metric_type][0].get("cvssData", {})
+                            break
+
+                    if cvss_data:
+                        severity = cvss_data.get("baseSeverity", "UNKNOWN")
+                        score = str(cvss_data.get("baseScore", "N/A"))
+                    else:
+                        severity = "UNKNOWN"
+                        score = "N/A"
+
+                    # Get description
+                    descriptions = cve_data.get("descriptions", [])
+                    description = next(
+                        (
+                            desc["value"]
+                            for desc in descriptions
+                            if desc.get("lang") == "en"
+                        ),
+                        "No description available",
+                    )
+
+                    cves.append(
+                        CVE(
+                            id=cve_id,
+                            url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                            severity=severity,
+                            score=score,
+                            description=description,
+                        )
+                    )
+
+                return cves
+
+            else:
+                print(f"NVD API returned status code: {response.status_code}")
+                return self._get_alternative_vulnerability_data(query)
 
         except Exception as e:
-            return f"Error finding product recommendations: {str(e)}"
+            print(f"Error accessing NVD API: {str(e)}")
+            return self._get_alternative_vulnerability_data(query)
+
+    def _get_alternative_vulnerability_data(self, query: str) -> List[CVE]:
+        """Get vulnerability data from alternative sources when NVD API is unavailable"""
+        try:
+            # Enhance search query based on traffic type
+            clean_query = re.sub(r"[^\w\s-]", "", query)
+            if clean_query.lower() == "icmp flood":
+                search_terms = [
+                    "ICMP flood vulnerability",
+                    "ping flood CVE",
+                    "ICMP DoS attack CVE",
+                ]
+            elif clean_query.lower() == "benign":
+                return []
+            else:
+                search_terms = [
+                    f"{clean_query} CVE vulnerability",
+                    f"{clean_query} security exploit",
+                ]
+
+            all_results = []
+            for search_term in search_terms:
+                try:
+                    results = self.search_tool.run(
+                        f"{search_term} site:cve.mitre.org OR site:nvd.nist.gov"
+                    )
+                    all_results.append(results)
+                except Exception as e:
+                    print(f"Error searching term '{search_term}': {str(e)}")
+
+            # Combine all results
+            combined_results = "\n".join(all_results)
+
+            # Extract CVE IDs and information
+            cves = []
+            cve_pattern = r"CVE-\d{4}-\d{4,7}"
+            severity_indicators = {
+                "CRITICAL": ["critical", "severe", "rce", "remote code execution"],
+                "HIGH": ["high", "dangerous", "dos", "denial of service"],
+                "MEDIUM": ["medium", "moderate", "xss", "csrf"],
+                "LOW": ["low", "minor", "local"],
+            }
+
+            matches = re.finditer(cve_pattern, combined_results)
+            seen_cves = set()
+
+            for match in matches:
+                cve_id = match.group()
+                if cve_id in seen_cves:
+                    continue
+
+                # Find the surrounding context (200 characters before and after)
+                start = max(0, match.start() - 200)
+                end = min(len(combined_results), match.end() + 200)
+                context = combined_results[start:end]
+
+                # Determine severity based on context
+                severity = "MEDIUM"  # Default severity
+                context_lower = context.lower()
+                for sev, indicators in severity_indicators.items():
+                    if any(ind in context_lower for ind in indicators):
+                        severity = sev
+                        break
+
+                # Extract a meaningful description
+                sentences = re.split(r"[.!?]+", context)
+                description = ""
+                for sentence in sentences:
+                    if cve_id in sentence:
+                        description = sentence.strip()
+                        # Add the next sentence for more context if available
+                        next_idx = sentences.index(sentence) + 1
+                        if next_idx < len(sentences):
+                            description += ". " + sentences[next_idx].strip()
+                        break
+
+                if not description:
+                    description = f"Vulnerability related to {query} attacks"
+
+                # Assign a score based on severity
+                score_ranges = {
+                    "CRITICAL": "9.0-10.0",
+                    "HIGH": "7.0-8.9",
+                    "MEDIUM": "4.0-6.9",
+                    "LOW": "0.1-3.9",
+                }
+
+                cves.append(
+                    CVE(
+                        id=cve_id,
+                        url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                        severity=severity,
+                        score=score_ranges.get(severity, "N/A"),
+                        description=description,
+                    )
+                )
+                seen_cves.add(cve_id)
+
+                if len(cves) >= 5:  # Limit to 5 results
+                    break
+
+            return cves
+
+        except Exception as e:
+            print(f"Error in alternative vulnerability search: {str(e)}")
+            return []
+
+    def get_product_recommendations(self, search_query: str) -> List[SecurityProduct]:
+        """Get security product recommendations with structured output"""
+        try:
+            print(f"\nSearching for security products related to: {search_query}")
+
+            # Enhance search query
+            search_terms = [
+                f"{search_query} enterprise security solutions reviews",
+                f"top rated {search_query} security products comparison",
+                f"best enterprise {search_query} security vendors",
+            ]
+
+            all_results = []
+            for term in search_terms:
+                try:
+                    results = self.search_tool.run(term)
+                    if results:
+                        all_results.append(results)
+                        print(f"Found results for: {term}")
+                except Exception as e:
+                    print(f"Error searching '{term}': {str(e)}")
+                    continue
+
+            if not all_results:
+                print("No search results found")
+                return []
+
+            # Combine results
+            combined_results = "\n\n".join(all_results)
+
+            # Extract product information using LLM
+            prompt = f"""Extract the top security products/solutions from this text. Focus on enterprise-grade security solutions.
+
+Search Results:
+{combined_results}
+
+Return a JSON array of the top 5 most relevant products. Each product should have:
+- name: The product name (must be real)
+- type: Category (Network Security, IDS/IPS, Firewall, etc.)
+- description: Key features and capabilities
+- relevance_score: 0-10 based on relevance to {search_query}
+
+Format:
+[
+    {{
+        "name": "Product Name",
+        "type": "Product Category",
+        "description": "Description",
+        "relevance_score": 9.5
+    }}
+]"""
+
+            # Get LLM response
+            response = self.llm.invoke(prompt)
+
+            try:
+                # Parse response
+                if isinstance(response, str):
+                    # Clean up the response
+                    cleaned_response = re.sub(
+                        r"^```json\s*|\s*```$", "", response.strip()
+                    )
+                    products_data = json.loads(cleaned_response)
+                else:
+                    products_data = response
+
+                # Convert to SecurityProduct objects
+                products = []
+                for product_data in products_data:
+                    try:
+                        product = SecurityProduct(
+                            name=product_data["name"],
+                            type=product_data["type"],
+                            description=product_data["description"],
+                            relevance_score=float(product_data["relevance_score"]),
+                        )
+                        products.append(product)
+                        print(f"Added product: {product.name}")
+                    except Exception as e:
+                        print(f"Error parsing product: {str(e)}")
+                        continue
+
+                return sorted(products, key=lambda x: x.relevance_score, reverse=True)
+
+            except Exception as e:
+                print(f"Error parsing products: {str(e)}")
+                return []
+
+        except Exception as e:
+            print(f"Error in product recommendations: {str(e)}")
+            return []
+
+    def _categorize_security_product(self, description):
+        """Categorize security product based on description"""
+        categories = {
+            "Network Security": ["firewall", "ids", "ips", "network", "traffic"],
+            "Endpoint Protection": ["endpoint", "antivirus", "edr", "xdr"],
+            "Cloud Security": ["cloud", "saas", "container"],
+            "Identity & Access": ["identity", "access", "authentication", "iam"],
+            "Threat Intelligence": ["threat", "intelligence", "detection"],
+            "Vulnerability Management": ["vulnerability", "scanner", "assessment"],
+            "SIEM & Analytics": ["siem", "log", "analytics", "monitoring"],
+            "IoT Security": ["iot", "device", "embedded"],
+        }
+
+        desc_lower = description.lower()
+        matches = []
+
+        for category, keywords in categories.items():
+            if any(keyword in desc_lower for keyword in keywords):
+                matches.append(category)
+
+        return " & ".join(matches[:2]) if matches else "General Security"
+
+    def _calculate_product_relevance(self, product, security_need):
+        """Calculate product relevance score based on security need"""
+        relevance = 0
+        need_lower = security_need.lower()
+        desc_lower = product["description"].lower()
+
+        # Check if product name or type matches security need
+        if any(word in product["name"].lower() for word in need_lower.split()):
+            relevance += 3
+
+        if any(word in product["type"].lower() for word in need_lower.split()):
+            relevance += 2
+
+        # Check for security need keywords in description
+        if any(word in desc_lower for word in need_lower.split()):
+            relevance += 2
+
+        # Bonus for enterprise/professional terms
+        enterprise_terms = [
+            "enterprise",
+            "professional",
+            "business",
+            "corporate",
+            "industry",
+        ]
+        if any(term in desc_lower for term in enterprise_terms):
+            relevance += 1
+
+        return relevance
+
+    def _copy_static_files(self):
+        """Copy static assets to the reports directory"""
+        # Create CSS file with Tailwind utilities
+        tailwind_css = """
+        @import 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css';
+        @import 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css';
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        """
+
+        css_file = self.static_dir / "style.css"
+        css_file.write_text(tailwind_css)
+
+    def generate_report(self, samples_df):
+        """Generate HTML report for all analyzed samples"""
+        # Clear existing reports
+        if self.reports_dir.exists():
+            shutil.rmtree(self.reports_dir)
+        self.reports_dir.mkdir()
+        self.static_dir.mkdir()
+
+        # Copy static files
+        self._copy_static_files()
+
+        all_samples = []
+
+        for i, sample in enumerate(samples_df.iterrows(), 1):
+            # Store the current sample
+            self.current_sample = sample[1].to_frame().T
+
+            # Get basic information
+            sample_info = {
+                "id": i,
+                "source_port": int(sample[1]["Src Port"]),
+                "source_ip": int(sample[1]["Src IP"]),
+                "dest_port": int(sample[1]["Dst Port"]),
+                "dest_ip": int(sample[1]["Dst IP"]),
+                "protocol": int(sample[1]["Protocol"]),
+                "detail_url": f"sample_{i}.html",
+                "traffic_type": self.label_encoder.inverse_transform(
+                    [int(sample[1]["Label"])]
+                )[0],
+            }
+
+            # Get classifier results
+            classifier_results = self.analyze_with_majority_vote()
+            sample_info.update(self._parse_classifier_results(classifier_results))
+
+            # Get related research
+            traffic_type = sample_info["traffic_type"]
+            try:
+                # Construct ArXiv query
+                if traffic_type.lower() == "icmp flood":
+                    query = 'cat:cs.CR AND (ti:"DDoS" OR ti:"denial of service" OR abs:"ICMP flood")'
+                elif traffic_type.lower() == "benign":
+                    query = 'cat:cs.CR AND (ti:"network traffic classification" OR ti:"intrusion detection")'
+                else:
+                    query = (
+                        f'cat:cs.CR AND (ti:"{traffic_type}" OR abs:"{traffic_type}")'
+                    )
+
+                print(f"\nSearching ArXiv with query: {query}")
+                try:
+                    arxiv_results = self.arxiv_retriever.get_relevant_documents(query)
+                    print(f"Found {len(arxiv_results)} papers")
+
+                    if not arxiv_results:
+                        # Try fallback query
+                        fallback_query = 'cat:cs.CR AND (ti:"network security" OR ti:"intrusion detection")'
+                        print(f"\nNo results, trying fallback query: {fallback_query}")
+                        arxiv_results = self.arxiv_retriever.get_relevant_documents(
+                            fallback_query
+                        )
+                        print(f"Found {len(arxiv_results)} papers with fallback query")
+                except Exception as e:
+                    print(f"Error in ArXiv search: {str(e)}")
+                    arxiv_results = []
+
+                # Parse and store the results
+                sample_info["arxiv_articles"] = self._parse_arxiv_results(arxiv_results)
+                print(
+                    f"Total papers found and parsed: {len(sample_info['arxiv_articles'])}"
+                )
+
+            except Exception as e:
+                print(f"Error retrieving research papers: {str(e)}")
+                sample_info["arxiv_articles"] = []
+
+            # Get CVE information
+            cve_results = self.search_cve(traffic_type)
+            sample_info["cves"] = self._parse_cve_results(cve_results)
+
+            # Get product recommendations
+            try:
+                if traffic_type.lower() == "icmp flood":
+                    product_query = "DDoS and ICMP flood protection"
+                elif traffic_type.lower() == "benign":
+                    product_query = "network monitoring and intrusion detection"
+                else:
+                    product_query = f"{traffic_type} attack prevention"
+
+                print(f"\nGetting product recommendations for: {product_query}")
+                products = self.get_product_recommendations(product_query)
+                sample_info["products"] = products
+                print(f"Found {len(products)} product recommendations")
+
+            except Exception as e:
+                print(f"Error getting product recommendations: {str(e)}")
+                sample_info["products"] = []
+
+            all_samples.append(sample_info)
+
+            # Generate individual sample report
+            self._generate_sample_report(sample_info)
+
+        # Generate index page
+        self._generate_index_page(all_samples)
+
+        return str(self.reports_dir)
+
+    def _parse_classifier_results(self, results):
+        """Parse classifier results into structured data"""
+        classifiers = []
+        majority_vote = {}
+
+        for line in results.split("\n"):
+            if "🔹" in line and ":" in line:
+                # Parse individual classifier results
+                classifier_name = line.split("🔹")[1].split(":")[0].strip()
+                prediction = line.split(":")[1].split("(")[0].strip()
+                confidence = None
+                if "(confidence:" in line:
+                    confidence = (
+                        float(line.split("confidence:")[1].split(")")[0].strip()) * 100
+                    )
+
+                classifiers.append(
+                    {
+                        "name": classifier_name,
+                        "prediction": prediction,
+                        "confidence": confidence,
+                    }
+                )
+            elif "🎯 Final Prediction:" in line:
+                majority_vote["prediction"] = line.split(":")[1].strip()
+            elif "📊 Agreement Ratio:" in line:
+                majority_vote["agreement_ratio"] = (
+                    float(line.split(":")[1].strip()) * 100
+                )
+
+        return {"classifiers": classifiers, "majority_vote": majority_vote}
+
+    def _parse_arxiv_results(self, documents):
+        """Parse ArXiv search results into structured paper data"""
+        papers = []
+
+        try:
+            print(f"\nProcessing {len(documents)} ArXiv documents")
+
+            for doc in documents:
+                try:
+                    # ArxivRetriever gives us structured metadata
+                    metadata = doc.metadata
+                    print(f"Available fields in metadata: {list(metadata.keys())}")
+
+                    paper = {
+                        "title": metadata["Title"],
+                        "authors": metadata["Authors"],
+                        "arxiv_id": metadata["Entry ID"].split("/")[-1],
+                        "url": metadata["Entry ID"],
+                        "published": metadata["Published"].isoformat(),
+                        "summary": doc.page_content,
+                    }
+
+                    papers.append(paper)
+                    print(f"- Successfully parsed paper: {paper['title'][:100]}")
+
+                except Exception as e:
+                    print(f"- Error parsing paper: {str(e)}")
+                    continue
+
+            return papers
+
+        except Exception as e:
+            print(f"Error in _parse_arxiv_results: {str(e)}")
+            return []
+
+    def _parse_cve_results(self, vulnerabilities):
+        """Format CVE results in a structured way"""
+        # If the vulnerabilities are already CVE objects, just return them
+        if vulnerabilities and isinstance(vulnerabilities[0], CVE):
+            return vulnerabilities[:5]
+
+        # Otherwise parse from raw data
+        cves = []
+        for vuln in vulnerabilities[:5]:
+            try:
+                cve = vuln["cve"]
+                cve_id = cve["id"]
+
+                # Validate CVE ID format
+                if not re.match(r"^CVE-\d{4}-\d{4,7}$", cve_id):
+                    continue
+
+                # Get English description
+                description = next(
+                    (
+                        desc["value"]
+                        for desc in cve.get("descriptions", [])
+                        if desc.get("lang") == "en"
+                    ),
+                    None,
+                )
+
+                if not description:
+                    continue
+
+                # Get metrics
+                metrics = cve.get("metrics", {})
+                severity = "N/A"
+                score = "N/A"
+
+                for metric_type in ["cvssMetricV31", "cvssMetricV30", "cvssMetricV2"]:
+                    if metric_type in metrics:
+                        metric_data = metrics[metric_type][0].get("cvssData", {})
+                        severity = metric_data.get("baseSeverity", severity)
+                        score = str(metric_data.get("baseScore", score))
+                        break
+
+                cves.append(
+                    CVE(
+                        id=cve_id,
+                        url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                        severity=severity,
+                        score=score,
+                        description=description,
+                    )
+                )
+            except (KeyError, IndexError):
+                continue
+
+        return cves
+
+    def _parse_product_results(self, products):
+        """Parse product recommendations into structured data"""
+        # If products are already SecurityProduct objects, just return them
+        if products and isinstance(products[0], SecurityProduct):
+            return products[:5]
+
+        # Otherwise parse from raw data
+        return [
+            SecurityProduct(
+                name=product["name"],
+                type=product["type"],
+                description=product["description"],
+                relevance_score=self._calculate_product_relevance(product),
+            )
+            for product in products[:5]
+        ]
+
+    def _generate_sample_report(self, sample_info):
+        """Generate HTML report for individual sample"""
+        template = self.jinja_env.get_template("traffic_analysis.html")
+        sample_info["current_time"] = datetime.utcnow()
+        output = template.render(**sample_info)
+
+        output_path = self.reports_dir / sample_info["detail_url"]
+        output_path.write_text(output)
+
+    def _generate_index_page(self, all_samples):
+        """Generate index page with all samples"""
+        template = self.jinja_env.get_template("index.html")
+        output = template.render(samples=all_samples, current_time=datetime.utcnow())
+
+        output_path = self.reports_dir / "index.html"
+        output_path.write_text(output)
+
+    def _find_available_port(self, start_port=8000):
+        """Find an available port starting from start_port"""
+        port = start_port
+        while port < start_port + 100:  # Try up to 100 ports
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("", port))
+                    return port
+            except OSError:
+                port += 1
+        raise RuntimeError("Could not find an available port")
+
+    def _start_http_server(self, port):
+        """Start HTTP server in a separate thread"""
+        # Use absolute path of reports directory
+        os.chdir(str(self.reports_dir.absolute()))
+
+        server = HTTPServer(("", port), SimpleHTTPRequestHandler)
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.daemon = True  # Thread will exit when main program exits
+        server_thread.start()
+
+        return server
+
+    def serve_reports(self):
+        """Serve the reports directory and open in browser"""
+        # Find an available port
+        port = self._find_available_port()
+
+        # Print debug information
+        print(f"\nServing reports from: {self.reports_dir.absolute()}")
+        print(f"Contents of reports directory:")
+        for item in self.reports_dir.iterdir():
+            print(f"  - {item.name}")
+
+        # Start the server
+        server = self._start_http_server(port)
+
+        # Open the browser
+        url = f"http://localhost:{port}/index.html"
+        print(f"\nStarting report server at {url}")
+        webbrowser.open(url)
+
+        try:
+            print("\nPress Ctrl+C to stop the server...")
+            while True:
+                pass
+        except KeyboardInterrupt:
+            print("\nShutting down server...")
+            server.shutdown()
+            server.server_close()
+
+    def generate_analysis(self, cves, products, papers) -> SecurityAnalysis:
+        """Generate complete security analysis with structured output"""
+        return SecurityAnalysis(
+            cves=self._parse_cve_results(cves),
+            products=self._parse_product_results(products),
+            research=self._parse_arxiv_results(papers),
+        )
 
 
 if __name__ == "__main__":
     # Initialize the agent
     agent = IDSAgent()
 
-    # Example usage
-    import pandas as pd
+    # Test arXiv search and product recommendations directly
+    print("\n=== Testing ArXiv Search ===")
+    try:
+        # Test with a known traffic type
+        test_query = "DDoS attack"
+        print(f"\nTesting arXiv search with query: {test_query}")
+        arxiv_results = agent.arxiv_retriever.get_relevant_documents(
+            f'all:"{test_query}" AND cat:cs.CR'
+        )
+        print(f"Found {len(arxiv_results) if arxiv_results else 0} papers")
+        if arxiv_results:
+            for i, doc in enumerate(arxiv_results[:2], 1):
+                print(f"\nPaper {i}:")
+                print(f"Title: {doc.metadata.get('title', 'No title')}")
+                print(f"Authors: {doc.metadata.get('authors', 'No authors')}")
+    except Exception as e:
+        print(f"Error in arXiv test: {str(e)}")
+
+    print("\n=== Testing Product Recommendations ===")
+    try:
+        test_need = "DDoS attack prevention"
+        print(f"\nTesting product recommendations for: {test_need}")
+        products = agent.get_product_recommendations(test_need)
+        print(f"\nFound {len(products)} products")
+        for i, product in enumerate(products, 1):
+            print(f"\nProduct {i}:")
+            print(f"Name: {product.name}")
+            print(f"Type: {product.type}")
+            print(f"Description: {product.description}")
+            print(f"Relevance: {product.relevance_score}")
+    except Exception as e:
+        print(f"Error in product recommendations test: {str(e)}")
 
     # Load and sample test data
+    print("\n=== Testing Full Analysis ===")
+    import pandas as pd
+
     test_df = pd.read_csv("test.csv")
-    sample = test_df.sample(n=5, random_state=42)
+    samples = test_df.sample(n=5, random_state=42)  # Take 5 random samples
 
-    # Display traffic samples first
-    agent.display_traffic_summary(sample)
+    print(f"\nAnalyzing {len(samples)} random samples...")
 
-    # Run the analysis
-    print("\nStarting detailed analysis...")
-    result = agent.analyze(sample)
-    print("\nAgent's Analysis:")
-    print(result)
+    # Generate HTML report
+    report_path = agent.generate_report(samples)
+    print(f"\nReport generated at: {report_path}")
+
+    # Serve and open the reports
+    agent.serve_reports()

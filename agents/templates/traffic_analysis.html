@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Traffic Analysis - Sample {{ sample_id }}{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Basic Flow Information -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-info-circle text-indigo-600 mr-2"></i>Basic Flow Information
+            </h3>
+        </div>
+        <div class="border-t border-gray-200">
+            <dl>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Traffic Type</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ traffic_type }}</dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Source → Destination</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        {{ source_port }}:{{ source_ip }} → {{ dest_port }}:{{ dest_ip }}
+                    </dd>
+                </div>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Protocol</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ protocol }}</dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Classification Reports -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-chart-pie text-indigo-600 mr-2"></i>Classification Reports
+            </h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div class="space-y-4">
+                {% for classifier in classifiers %}
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h4 class="text-md font-semibold text-gray-700">{{ classifier.name }}</h4>
+                    <div class="mt-2">
+                        <p class="text-sm text-gray-600">Prediction: <span class="font-medium text-gray-900">{{ classifier.prediction }}</span></p>
+                        {% if classifier.confidence %}
+                        <p class="text-sm text-gray-600">Confidence: <span class="font-medium text-gray-900">{{ classifier.confidence }}%</span></p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+
+                <div class="mt-4 p-4 bg-indigo-50 rounded-lg">
+                    <h4 class="text-md font-semibold text-indigo-900">Majority Vote Result</h4>
+                    <p class="mt-2 text-sm text-indigo-800">Final Prediction: <span class="font-medium">{{ majority_vote.prediction }}</span></p>
+                    <p class="text-sm text-indigo-800">Agreement Ratio: <span class="font-medium">{{ majority_vote.agreement_ratio }}%</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Related Research -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-book text-indigo-600 mr-2"></i>Related Research
+            </h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div class="space-y-4">
+                {% for article in arxiv_articles %}
+                <div class="border-l-4 border-indigo-500 pl-4">
+                    <h4 class="text-md font-semibold text-gray-900">
+                        <a href="{{ article.url }}" target="_blank" class="hover:text-indigo-600">
+                            {{ article.title }}
+                            <i class="fas fa-external-link-alt text-xs ml-1"></i>
+                        </a>
+                    </h4>
+                    <p class="mt-1 text-sm text-gray-600">{{ article.authors }}</p>
+                    <p class="mt-2 text-sm text-gray-500">{{ article.summary }}</p>
+                    <p class="mt-1 text-xs text-gray-400">Published: {{ article.published }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- CVE Vulnerabilities -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-exclamation-triangle text-indigo-600 mr-2"></i>Related CVE Vulnerabilities
+            </h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div class="space-y-4">
+                {% for cve in cves %}
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h4 class="text-md font-semibold text-gray-900">
+                        <a href="{{ cve.url }}" target="_blank" class="text-indigo-600 hover:text-indigo-900">
+                            {{ cve.id }}
+                            <i class="fas fa-external-link-alt text-xs ml-1"></i>
+                        </a>
+                    </h4>
+                    <div class="mt-2">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                            {% if cve.severity == 'CRITICAL' %}bg-red-100 text-red-800
+                            {% elif cve.severity == 'HIGH' %}bg-orange-100 text-orange-800
+                            {% elif cve.severity == 'MEDIUM' %}bg-yellow-100 text-yellow-800
+                            {% else %}bg-green-100 text-green-800{% endif %}">
+                            {{ cve.severity }} {% if cve.score != 'N/A' %}(Score: {{ cve.score }}){% endif %}
+                        </span>
+                    </div>
+                    <p class="mt-2 text-sm text-gray-600">{{ cve.description }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Recommendations -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-tools text-indigo-600 mr-2"></i>Recommended Security Products
+            </h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div class="space-y-4">
+                {% for product in products %}
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h4 class="text-md font-semibold text-gray-900">{{ product.name }}</h4>
+                    <p class="mt-2 text-sm text-gray-600">{{ product.description }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
