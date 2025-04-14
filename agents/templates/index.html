@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}IDS Analysis Report - Overview{% endblock %}
+
+{% block content %}
+<div class="bg-white shadow overflow-hidden sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+        <h3 class="text-lg leading-6 font-medium text-gray-900">
+            <i class="fas fa-network-wired text-indigo-600 mr-2"></i>Analyzed Traffic Samples
+        </h3>
+        <p class="mt-1 max-w-2xl text-sm text-gray-500">
+            Overview of all analyzed network traffic samples
+        </p>
+    </div>
+    
+    <div class="border-t border-gray-200">
+        <div class="bg-gray-50 px-4 py-5 sm:px-6">
+            <div class="grid grid-cols-1 gap-4">
+                {% for sample in samples %}
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <h4 class="text-lg font-medium text-gray-900">
+                                Sample {{ sample.id }}
+                                <span class="ml-2 px-2 py-1 text-xs rounded-full 
+                                    {% if sample.majority_vote.prediction == 'Malicious' %}bg-red-100 text-red-800
+                                    {% elif sample.majority_vote.prediction == 'Suspicious' %}bg-yellow-100 text-yellow-800
+                                    {% else %}bg-green-100 text-green-800{% endif %}">
+                                    {{ sample.majority_vote.prediction }}
+                                </span>
+                            </h4>
+                            <div class="mt-2 text-sm text-gray-500">
+                                <p>Source → Destination: {{ sample.source_port }}:{{ sample.source_ip }} → {{ sample.dest_port }}:{{ sample.dest_ip }}</p>
+                                <p class="mt-1">Protocol: {{ sample.protocol }}</p>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <a href="{{ sample.detail_url }}" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                                View Details
+                                <i class="fas fa-arrow-right ml-2"></i>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    {% if sample.cves %}
+                    <div class="mt-4">
+                        <h5 class="text-sm font-medium text-gray-700">Related CVEs:</h5>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            {% for cve in sample.cves[:3] %}
+                            <a href="{{ cve.url }}" target="_blank" class="hover:opacity-75">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                    {% if cve.severity == 'CRITICAL' %}bg-red-100 text-red-800
+                                    {% elif cve.severity == 'HIGH' %}bg-orange-100 text-orange-800
+                                    {% elif cve.severity == 'MEDIUM' %}bg-yellow-100 text-yellow-800
+                                    {% else %}bg-green-100 text-green-800{% endif %}">
+                                    {{ cve.id }}
+                                    <i class="fas fa-external-link-alt text-xs ml-1"></i>
+                                </span>
+                            </a>
+                            {% endfor %}
+                            {% if sample.cves|length > 3 %}
+                            <span class="text-xs text-gray-500">+{{ sample.cves|length - 3 }} more</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

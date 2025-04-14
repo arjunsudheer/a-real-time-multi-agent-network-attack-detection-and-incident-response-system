@@ -1,0 +1,9 @@
+Benign -> 0
+DNS Flood -> 1
+Dictionary Attack -> 2
+ICMP Flood -> 3
+OS Scan -> 4
+Port Scan -> 5
+SYN Flood -> 6
+Slowloris -> 7
+UDP Flood -> 8
