@@ -25,7 +25,7 @@ class FeatureSelectionAgent:
         self.__initialize_llm()
 
     def __initialize_llm(self) -> None:
-        self.llm = GoogleGenerativeAI(
+        llm = GoogleGenerativeAI(
             model="gemini-2.0-flash",
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0,
@@ -64,7 +64,7 @@ class FeatureSelectionAgent:
         )
 
         # Create React agent
-        agent = create_react_agent(llm=self.llm, tools=self.tools, prompt=prompt)
+        agent = create_react_agent(llm=llm, tools=self.tools, prompt=prompt)
 
         # Create agent executor
         self.agent_executor = AgentExecutor(
@@ -112,14 +112,12 @@ class FeatureSelectionAgent:
             )
 
         def safe_web_search(query: str) -> str:
-            print("web search called")
             try:
                 return web_search.run(query)
             except Exception as e:
                 return f"ERROR: Web Search failed: {e}"
 
         def safe_knowledge_retrieve(query: str) -> str:
-            print("arxiv called")
             try:
                 return arxiv_retriever.run(query)
             except Exception as e:

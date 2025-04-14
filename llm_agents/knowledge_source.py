@@ -33,7 +33,7 @@ class KnowledgeSource:
         split_docs = text_splitter.split_documents(documents)
         return split_docs
 
-    def retrieve_relevant_documents(self, query: str, k: int = 5) -> str | None:
+    def retrieve_relevant_knowledge(self, query: str, k: int = 5) -> str | None:
         if not Path(self.dataset_path).exists():
             print(
                 "Your FAISS index has not been saved yet. Please save documents before accessing them."
