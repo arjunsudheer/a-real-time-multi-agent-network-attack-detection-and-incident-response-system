@@ -27,6 +27,120 @@
                     <dt class="text-sm font-medium text-gray-500">Protocol</dt>
                     <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ protocol }}</dd>
                 </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Flow Duration</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ flow_duration }} microseconds</dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Packet Information -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-box text-indigo-600 mr-2"></i>Packet Information
+            </h3>
+        </div>
+        <div class="border-t border-gray-200">
+            <dl>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Forward Packets</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        {{ total_fwd_packets }} (avg size: {{ fwd_packet_length_mean }} bytes)
+                    </dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Backward Packets</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        {{ total_bwd_packets }} (avg size: {{ bwd_packet_length_mean }} bytes)
+                    </dd>
+                </div>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Total Length</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        Fwd={{ total_length_fwd_packets }} bytes, Bwd={{ total_length_bwd_packets }} bytes
+                    </dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Flow Rates -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-chart-line text-indigo-600 mr-2"></i>Flow Rates
+            </h3>
+        </div>
+        <div class="border-t border-gray-200">
+            <dl>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Flow Rate</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ flow_packets_s }} packets/s</dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Bytes Rate</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ flow_bytes_s }} bytes/s</dd>
+                </div>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Forward Rate</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ fwd_packets_s }} packets/s</dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Backward Rate</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ bwd_packets_s }} packets/s</dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+
+    <!-- TCP Flags -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-flag text-indigo-600 mr-2"></i>TCP Flags
+            </h3>
+        </div>
+        <div class="border-t border-gray-200">
+            <dl>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-6 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">FIN</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0">{{ fin_flag_count }}</dd>
+                    <dt class="text-sm font-medium text-gray-500">SYN</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0">{{ syn_flag_count }}</dd>
+                    <dt class="text-sm font-medium text-gray-500">RST</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0">{{ rst_flag_count }}</dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-6 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">PSH</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0">{{ psh_flag_count }}</dd>
+                    <dt class="text-sm font-medium text-gray-500">ACK</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0">{{ ack_flag_count }}</dd>
+                    <dt class="text-sm font-medium text-gray-500">URG</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0">{{ urg_flag_count }}</dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Activity Pattern -->
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                <i class="fas fa-bolt text-indigo-600 mr-2"></i>Activity Pattern
+            </h3>
+        </div>
+        <div class="border-t border-gray-200">
+            <dl>
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Active Mean</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ active_mean }} microseconds</dd>
+                </div>
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Idle Mean</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{{ idle_mean }} microseconds</dd>
+                </div>
             </dl>
         </div>
     </div>
