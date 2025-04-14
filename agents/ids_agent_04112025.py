@@ -566,86 +566,105 @@ class IDSAgent:
         return response["output"]
 
     def search_cve(self, query: str) -> List[CVE]:
-        """Search for CVE vulnerabilities using the NVD API with structured output"""
+        """Search for CVE vulnerabilities using the NVD API 2.0 with structured output"""
         try:
-            # NVD API endpoint
-            base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0/"
+            # NVD API 2.0 endpoint
+            base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
             # Get API key from environment variable
             api_key = os.getenv("NVD_API_KEY")
 
-            # Clean and enhance query
+            # Clean and enhance query for keywordSearch
             clean_query = re.sub(r"[^\w\s-]", "", query)
             if clean_query.lower() == "icmp flood":
                 search_terms = ["ICMP flood", "ping flood", "ICMP DoS"]
             elif clean_query.lower() == "benign":
                 return []  # No vulnerabilities for benign traffic
             else:
-                search_terms = [clean_query, "DoS", "network attack"]
+                search_terms = [clean_query, "network attack", "network security"]
 
-            enhanced_query = " OR ".join(f'"{term}"' for term in search_terms)
+            # Join search terms with OR for better coverage
+            keyword_search = " OR ".join(f'"{term}"' for term in search_terms)
 
             # Parameters for the API request
-            params = {"keywordSearch": enhanced_query, "resultsPerPage": 10}
+            params = {
+                "keywordSearch": keyword_search,
+                "resultsPerPage": 10,  # Limit to 10 results
+                "startIndex": 0
+            }
 
             # Headers including API key if available
-            headers = {"User-Agent": "IDS-Analysis-Tool/1.0"}
+            headers = {
+                "User-Agent": "IDS-Analysis-Tool/1.0",
+                "Content-Type": "application/json"
+            }
             if api_key:
                 headers["apiKey"] = api_key
 
-            print(f"\nSearching CVEs with query: {enhanced_query}")
+            print(f"\nSearching CVEs with query: {keyword_search}")
 
             # Make the request with timeout
             response = requests.get(
-                base_url, params=params, headers=headers, timeout=10
+                base_url, 
+                params=params, 
+                headers=headers, 
+                timeout=10
             )
 
             if response.status_code == 200:
                 data = response.json()
-
-                if data.get("totalResults", 0) == 0:
-                    # Try alternative search
+                
+                # Check if we have any results
+                total_results = data.get("totalResults", 0)
+                if total_results == 0:
+                    print(f"No CVEs found for query: {keyword_search}")
                     return self._get_alternative_vulnerability_data(query)
 
+                vulnerabilities = data.get("vulnerabilities", [])
                 cves = []
-                for vuln in data.get("vulnerabilities", [])[:5]:
-                    cve_data = vuln.get("cve", {})
 
+                for vuln in vulnerabilities[:5]:  # Limit to top 5 results
+                    cve_data = vuln.get("cve", {})
+                    
                     # Get CVE ID
                     cve_id = cve_data.get("id")
                     if not cve_id or not re.match(r"^CVE-\d{4}-\d{4,7}$", cve_id):
                         continue
 
-                    # Get metrics
+                    # Get metrics - try v3.1 first, then v3.0, then v2
                     metrics = cve_data.get("metrics", {})
                     cvss_data = None
+                    severity = "UNKNOWN"
+                    score = "N/A"
 
-                    # Try different CVSS versions
-                    for metric_type in [
-                        "cvssMetricV31",
-                        "cvssMetricV30",
-                        "cvssMetricV2",
-                    ]:
-                        if metric_type in metrics and metrics[metric_type]:
-                            cvss_data = metrics[metric_type][0].get("cvssData", {})
-                            break
-
-                    if cvss_data:
+                    # Try CVSS v3.1 first
+                    if "cvssMetricV31" in metrics and metrics["cvssMetricV31"]:
+                        cvss_data = metrics["cvssMetricV31"][0].get("cvssData", {})
                         severity = cvss_data.get("baseSeverity", "UNKNOWN")
                         score = str(cvss_data.get("baseScore", "N/A"))
-                    else:
-                        severity = "UNKNOWN"
-                        score = "N/A"
+                    # Then try CVSS v3.0
+                    elif "cvssMetricV30" in metrics and metrics["cvssMetricV30"]:
+                        cvss_data = metrics["cvssMetricV30"][0].get("cvssData", {})
+                        severity = cvss_data.get("baseSeverity", "UNKNOWN")
+                        score = str(cvss_data.get("baseScore", "N/A"))
+                    # Finally try CVSS v2
+                    elif "cvssMetricV2" in metrics and metrics["cvssMetricV2"]:
+                        cvss_data = metrics["cvssMetricV2"][0].get("cvssData", {})
+                        base_score = cvss_data.get("baseScore", 0)
+                        score = str(base_score)
+                        # Convert v2 score to severity
+                        if base_score >= 7.0:
+                            severity = "HIGH"
+                        elif base_score >= 4.0:
+                            severity = "MEDIUM"
+                        else:
+                            severity = "LOW"
 
-                    # Get description
+                    # Get description (English only)
                     descriptions = cve_data.get("descriptions", [])
                     description = next(
-                        (
-                            desc["value"]
-                            for desc in descriptions
-                            if desc.get("lang") == "en"
-                        ),
-                        "No description available",
+                        (desc["value"] for desc in descriptions if desc.get("lang") == "en"),
+                        "No description available"
                     )
 
                     cves.append(
@@ -654,7 +673,7 @@ class IDSAgent:
                             url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
                             severity=severity,
                             score=score,
-                            description=description,
+                            description=description
                         )
                     )
 
@@ -662,6 +681,10 @@ class IDSAgent:
 
             else:
                 print(f"NVD API returned status code: {response.status_code}")
+                if response.status_code == 403:
+                    print("Access denied. API key may be required or invalid.")
+                elif response.status_code == 429:
+                    print("Rate limit exceeded. Consider using an API key or waiting before retrying.")
                 return self._get_alternative_vulnerability_data(query)
 
         except Exception as e:
@@ -963,6 +986,34 @@ Format:
                 "traffic_type": self.label_encoder.inverse_transform(
                     [int(sample[1]["Label"])]
                 )[0],
+                # Add flow duration
+                "flow_duration": f"{sample[1]['Flow Duration']:.2f}",
+                
+                # Add packet information
+                "total_fwd_packets": int(sample[1]["Total Fwd Packet"]),
+                "fwd_packet_length_mean": f"{sample[1]['Fwd Packet Length Mean']:.2f}",
+                "total_bwd_packets": int(sample[1]["Total Bwd packets"]),
+                "bwd_packet_length_mean": f"{sample[1]['Bwd Packet Length Mean']:.2f}",
+                "total_length_fwd_packets": f"{sample[1]['Total Length of Fwd Packet']:.0f}",
+                "total_length_bwd_packets": f"{sample[1]['Total Length of Bwd Packet']:.0f}",
+                
+                # Add flow rates
+                "flow_packets_s": f"{sample[1]['Flow Packets/s']:.2f}",
+                "flow_bytes_s": f"{sample[1]['Flow Bytes/s']:.2f}",
+                "fwd_packets_s": f"{sample[1]['Fwd Packets/s']:.2f}",
+                "bwd_packets_s": f"{sample[1]['Bwd Packets/s']:.2f}",
+                
+                # Add TCP flags
+                "fin_flag_count": int(sample[1]["FIN Flag Count"]),
+                "syn_flag_count": int(sample[1]["SYN Flag Count"]),
+                "rst_flag_count": int(sample[1]["RST Flag Count"]),
+                "psh_flag_count": int(sample[1]["PSH Flag Count"]),
+                "ack_flag_count": int(sample[1]["ACK Flag Count"]),
+                "urg_flag_count": int(sample[1]["URG Flag Count"]),
+                
+                # Add activity pattern
+                "active_mean": f"{sample[1]['Active Mean']:.2f}",
+                "idle_mean": f"{sample[1]['Idle Mean']:.2f}",
             }
 
             # Get classifier results
