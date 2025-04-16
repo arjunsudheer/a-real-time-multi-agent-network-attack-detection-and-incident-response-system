@@ -1,5 +1,3 @@
-# Author: Arjun Sudheer
-
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -81,10 +79,3 @@ def transform_and_scale_features(
     X_df = pd.DataFrame(X_processed, index=X.index)
 
     return X_df
-
-
-def preprocess_single_sample(X: pd.DataFrame, parent_directory: Path) -> pd.DataFrame:
-    clean_numeric_columns()
-
-    # Assume no label is provided
-    return transform_and_scale_features(X, parent_directory)

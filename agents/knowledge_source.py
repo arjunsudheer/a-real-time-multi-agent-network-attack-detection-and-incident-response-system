@@ -2,10 +2,46 @@ from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_community.retrievers import ArxivRetriever
+from langchain_core.tools import Tool
 
 import faiss
 from pathlib import Path
 import json
+
+
+# Initialize DuckDuckGo search
+web_search = DuckDuckGoSearchRun()
+# Initialize arXiv retriever
+arxiv_retriever = ArxivRetriever()
+
+
+def safe_web_search(query: str) -> str:
+    try:
+        return web_search.run(query)
+    except Exception as e:
+        return f"ERROR: Web Search failed: {e}"
+
+
+def safe_arxiv_retrieve(query: str) -> str:
+    try:
+        return arxiv_retriever.run(query)
+    except Exception as e:
+        return f"ERROR: Academic Literature Search failed: {e}"
+
+
+safe_web_search_tool = Tool(
+    name="WebSearch",
+    func=lambda query: safe_web_search(query),
+    description="Search the internet for information about IoT security and threats. You need to pass the search query to the tool. Use short queries, do not list many comma-separated values. Keep queries under 20 words.",
+)
+
+safe_arxiv_retrieve_tool = Tool(
+    name="AcademicLiteratureSearch",
+    func=lambda query: safe_arxiv_retrieve(query),
+    description="Retrieve relevant academic papers about IoT security from arXiv. Please be specific regarding what you want to find. Mention all features you want to learn more about.",
+)
 
 
 class KnowledgeSource:
