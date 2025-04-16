@@ -1,13 +1,13 @@
 from langchain_google_genai import GoogleGenerativeAI
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain_community.tools import DuckDuckGoSearchRun
-from langchain_community.retrievers import ArxivRetriever
 from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import Tool
 
 import numpy as np
 import pandas as pd
 import os
+
+from agents.knowledge_source import safe_web_search_tool, safe_arxiv_retrieve_tool
 
 
 class FeatureSelectionAgent:
@@ -73,15 +73,10 @@ class FeatureSelectionAgent:
             verbose=True,
             handle_parsing_errors=True,
             max_iterations=10,
-            max_execution_time=300,  # 5 minutes timeout
+            max_execution_time=300,
         )
 
     def __initialize_tools(self) -> None:
-        # Initialize DuckDuckGo search
-        web_search = DuckDuckGoSearchRun()
-        # Initialize arXiv retriever
-        arxiv_retriever = ArxivRetriever()
-
         def view_first_hundred_rows() -> pd.Series:
             return self.dataset_sample.head(n=100)
 
@@ -101,7 +96,7 @@ class FeatureSelectionAgent:
 
                 if feature not in self.dataset_features:
                     invalid_features.append(feature)
-                elif float(relevance_score) < 0.3:
+                elif float(relevance_score) <= 0.5:
                     # Drop features
                     self.df.drop(columns=[feature], inplace=True)
 
@@ -110,18 +105,6 @@ class FeatureSelectionAgent:
                 if len(invalid_features) == 0
                 else f"The following features do not exist: {invalid_features}. Perhaps you made a spelling mistake? Call the tool again with the corrected feature names."
             )
-
-        def safe_web_search(query: str) -> str:
-            try:
-                return web_search.run(query)
-            except Exception as e:
-                return f"ERROR: Web Search failed: {e}"
-
-        def safe_knowledge_retrieve(query: str) -> str:
-            try:
-                return arxiv_retriever.run(query)
-            except Exception as e:
-                return f"ERROR: Academic Literature Search failed: {e}"
 
         # Create unified classifier tool
         self.tools = [
@@ -141,16 +124,6 @@ class FeatureSelectionAgent:
                 description="Shows the features in the dataset. You do not need to pass any inputs, just call the tool.",
             ),
             Tool(
-                name="AcademicLiteratureSearch",
-                func=lambda query: safe_knowledge_retrieve(query),
-                description="Retrieve relevant academic papers about IoT security from arXiv. Please be specific regarding what you want to find. Mention all features you want to learn more about.",
-            ),
-            Tool(
-                name="WebSearch",
-                func=lambda query: safe_web_search(query),
-                description="Search the internet for information about IoT security and threats. You need to pass the search query to the tool. Use short queries, do not list many comma-separated values. Keep queries under 20 words.",
-            ),
-            Tool(
                 name="RemoveUnnecessaryFeatures",
                 func=lambda features_to_drop: drop_irrelevant_features(
                     features_to_drop
@@ -160,6 +133,8 @@ class FeatureSelectionAgent:
                 "feature_name is the feature name, and rating is the feature importance score on a scale of 0 (irrelevant) to 1 (relevant)."
                 "Make sure that you pass each feature and rating as a comma-separated string.",
             ),
+            safe_web_search_tool,
+            safe_arxiv_retrieve_tool,
         ]
 
     def select_features(self) -> list[str]:

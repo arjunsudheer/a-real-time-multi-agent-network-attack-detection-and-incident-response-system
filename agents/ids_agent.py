@@ -10,8 +10,8 @@ import os
 
 import numpy as np
 
-from llm_agents.knowledge_source import KnowledgeSource
-from preprocessing.data_preprocessing import (
+from agents.knowledge_source import KnowledgeSource
+from preprocessing.data_cleaning import (
     clean_numeric_columns,
     transform_and_scale_features,
     preprocess_single_sample,
