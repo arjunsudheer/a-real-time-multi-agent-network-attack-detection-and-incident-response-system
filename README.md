@@ -8,7 +8,7 @@ We use the ACI IOT Dataset for our experiment. Originally from: [https://www.kag
 
 ## File donwload Google Drive
 
-Google Drive link: [https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing]
+Google Drive link: [https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing](https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing)
 
 
 ## Environment Setup
@@ -36,7 +36,14 @@ unzip saved_models.zip
 To run the demo as shown in our video, use the following command:
 
 ```
-python agents/network_aget_demo.py
+python agents/network_agent_demo.py
 
 ```
 
+## If the browser does not open automatically
+
+If the browser does not open automatically, you can open it manually by going to the following link:
+
+```
+http://localhost:8000/index.html
+```
