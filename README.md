@@ -6,16 +6,6 @@ Please follow this guide to run our implementation. The code for the demo is on 
 ## Dataset
 We use the ACI IOT Dataset for our experiment. Originally from: [https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle](https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle).
 
-After downloading the dataset and extracting the zip file, move all the extracted contents into a directory called "original_datasets". Your directory structure should look like the following:
-
-- datasets
-    - aci_iot_network_dataset_2023
-        - original_dataset
-            - <The extracted dataset files here>
-- agents
-- classifiers
-- etc.
-
 ## File donwload Google Drive
 
 Google Drive link: [https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing]
