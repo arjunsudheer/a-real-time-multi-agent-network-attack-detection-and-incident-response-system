@@ -136,4 +136,4 @@ def train_binary_random_forest():
 
 
 if __name__ == "__main__":
-    train_binary_random_forest() 
+    train_binary_random_forest()
