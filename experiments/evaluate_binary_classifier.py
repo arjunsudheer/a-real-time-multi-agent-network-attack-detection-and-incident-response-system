@@ -61,10 +61,13 @@ def evaluate_binary_classifier():
         cmap="Blues",
         xticklabels=["Benign", "Malicious"],
         yticklabels=["Benign", "Malicious"],
+        annot_kws={"size": 16},  # Larger numbers in boxes
     )
-    plt.title("Binary Classifier Confusion Matrix")
-    plt.ylabel("True Label")
-    plt.xlabel("Predicted Label")
+    plt.title("Binary Classifier Confusion Matrix", fontsize=16)
+    plt.ylabel("True Label", fontsize=14)
+    plt.xlabel("Predicted Label", fontsize=14)
+    plt.xticks(fontsize=14)  # Larger tick labels
+    plt.yticks(fontsize=14)  # Larger tick labels
     plt.tight_layout()
     plt.savefig("visualizations/binary_random_forest_classifier_confusion_matrix.png")
     plt.close()
