@@ -16,6 +16,10 @@ After downloading the dataset and extracting the zip file, move all the extracte
 - classifiers
 - etc.
 
+## File donwload Google Drive
+
+Google Drive link: [https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing]
+
 
 ## Environment Setup
 
@@ -36,6 +40,8 @@ Download the classifier pre-trained weights `saved_models.zip` and extract them 
 ```
 unzip saved_models.zip
 ```
+
+## Running the Demo
 
 To run the demo as shown in our video, use the following command:
 
