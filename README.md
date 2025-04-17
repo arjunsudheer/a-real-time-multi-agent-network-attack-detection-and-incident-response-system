@@ -4,7 +4,7 @@ This repository is dedicated to our project on LLM-based network attack detectio
 Please follow this guide to run our implementation. The code for the demo is on the **main** branch. We use the Gemini API.
 
 ## Dataset
-We use the ACI IOT Dataset for our experiment. You can download the dataset at this link: [https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle](https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle).
+We use the ACI IOT Dataset for our experiment. Originally from: [https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle](https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle).
 
 After downloading the dataset and extracting the zip file, move all the extracted contents into a directory called "original_datasets". Your directory structure should look like the following:
 
@@ -16,5 +16,31 @@ After downloading the dataset and extracting the zip file, move all the extracte
 - classifiers
 - etc.
 
-## Feature Selection Agent (Data preprocessing)
-To preprocess the data, run the following commands:
+
+## Environment Setup
+
+Create a python virtual environment
+```bash
+python3 -m venv venv
+source venv/bin/activate # on unix
+pip install -r requirements.txt
+
+```
+
+
+Downlaod `label_encoder.pkl`, `test.csv`, and `scaler.pkl`, put them in project root
+
+
+Download the classifier pre-trained weights `saved_models.zip` and extract them as `saved_models/` folder
+
+```
+unzip saved_models.zip
+```
+
+To run the demo as shown in our video, use the following command:
+
+```
+python agents/network_aget_demo.py
+
+```
+

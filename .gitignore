@@ -23,3 +23,5 @@ datasets
 */__pycache__
 
 *.zip
+
+venv/
