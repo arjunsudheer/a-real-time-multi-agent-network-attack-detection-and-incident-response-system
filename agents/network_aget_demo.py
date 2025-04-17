@@ -9,7 +9,7 @@ import json
 import webbrowser
 import shutil
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 import socket
@@ -25,33 +25,23 @@ from langchain_core.prompts import PromptTemplate
 import transformers
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from langchain_core.output_parsers import JsonOutputParser
-from typing import List, Optional
-import time
+from typing import List
 
-# Get the directory containing this file
 AGENT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_ROOT = AGENT_DIR.parent
 
-# Load environment variables from .env file in project root
 load_dotenv(PROJECT_ROOT / ".env")
-
-# Add the current directory to Python path
 sys.path.append(str(PROJECT_ROOT))
 
 from classifiers.iot_torch_mlp import MLPClassifier
 
-# Set environment variables to disable warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
-# Set clean_up_tokenization_spaces globally
 transformers.tokenization_utils_base.CLEAN_UP_TOKENIZATION_SPACES = True
 
 
 class CVE(BaseModel):
-    """Schema for a CVE vulnerability"""
-
     id: str = Field(description="CVE ID in format CVE-YYYY-NNNNN")
     url: str = Field(description="URL to the NVD database entry")
     severity: str = Field(description="Severity level (CRITICAL, HIGH, MEDIUM, LOW)")
@@ -60,8 +50,6 @@ class CVE(BaseModel):
 
 
 class SecurityProduct(BaseModel):
-    """Schema for a security product recommendation"""
-
     name: str = Field(
         description="Name of the security product or vendor",
         min_length=2,
@@ -97,8 +85,6 @@ class SecurityProduct(BaseModel):
 
 
 class ArxivPaper(BaseModel):
-    """Schema for an arXiv research paper"""
-
     title: str = Field(description="Title of the paper")
     authors: str = Field(description="Authors of the paper")
     summary: str = Field(description="Summary/abstract of the paper")
@@ -107,8 +93,6 @@ class ArxivPaper(BaseModel):
 
 
 class SecurityAnalysis(BaseModel):
-    """Schema for complete security analysis output"""
-
     cves: List[CVE] = Field(description="List of related CVE vulnerabilities")
     products: List[SecurityProduct] = Field(
         description="List of recommended security products"
@@ -118,22 +102,18 @@ class SecurityAnalysis(BaseModel):
 
 class IDSAgent:
     def __init__(self):
-        # Set up directories
         self.base_dir = Path(os.path.dirname(os.path.abspath(__file__)))
         self.templates_dir = self.base_dir / "templates"
         self.reports_dir = self.base_dir / "reports"
         self.static_dir = self.reports_dir / "static"
 
-        # Create necessary directories
         self.reports_dir.mkdir(exist_ok=True)
         self.static_dir.mkdir(exist_ok=True)
 
-        # Initialize Jinja2 environment
         self.jinja_env = Environment(
             loader=FileSystemLoader(str(self.templates_dir)), autoescape=True
         )
 
-        # Add custom filters
         def format_datetime(value):
             if isinstance(value, datetime):
                 return value.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -141,7 +121,6 @@ class IDSAgent:
 
         self.jinja_env.filters["format_datetime"] = format_datetime
 
-        # Initialize other components
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.current_sample = None
         self.initialize_classifiers()
@@ -151,12 +130,10 @@ class IDSAgent:
         self.initialize_agent()
 
     def initialize_classifiers(self):
-        """Initialize all ML classifiers"""
         self.models = {}
         self.scalers = {}
         self.label_encoder = None
 
-        # Load label encoder
         self.label_encoder = joblib.load("label_encoder.pkl")
         print("\nLoading models...")
 
@@ -202,21 +179,17 @@ class IDSAgent:
                 print(f"Error loading {model_name} model: {str(e)}")
 
     def initialize_memory(self):
-        """Initialize FAISS vector store for memory"""
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-mpnet-base-v2",
             model_kwargs={"tokenizer_kwargs": {"clean_up_tokenization_spaces": True}},
         )
 
-        # Create memory directory if it doesn't exist
         memory_dir = Path("memory")
         memory_dir.mkdir(exist_ok=True)
 
-        # Paths for memory files
         short_term_path = memory_dir / "short_term_memory"
         long_term_path = memory_dir / "long_term_memory"
 
-        # Initialize or load short-term memory
         if short_term_path.exists():
             self.short_term_memory = FAISS.load_local(
                 str(short_term_path),
@@ -229,7 +202,6 @@ class IDSAgent:
             )
             self.short_term_memory.save_local(str(short_term_path))
 
-        # Initialize or load long-term memory
         if long_term_path.exists():
             self.long_term_memory = FAISS.load_local(
                 str(long_term_path),
@@ -243,18 +215,14 @@ class IDSAgent:
             self.long_term_memory.save_local(str(long_term_path))
 
     def initialize_tools(self):
-        """Initialize search and knowledge retrieval tools"""
-        # Initialize DuckDuckGo search
         self.search_tool = DuckDuckGoSearchRun()
 
-        # Initialize arXiv retriever
         self.arxiv_retriever = ArxivRetriever(
             load_max_docs=5,
-            doc_content_chars_max=None,  # Don't limit content
+            doc_content_chars_max=None,
             max_retries=3,
         )
 
-        # Create unified classifier tool
         self.tools = [
             Tool(
                 name="UnifiedClassifier",
@@ -284,7 +252,6 @@ class IDSAgent:
         ]
 
     def initialize_llm(self):
-        """Initialize the LLM"""
         self.llm = GoogleGenerativeAI(
             model="gemini-2.0-flash",
             google_api_key=os.getenv("GOOGLE_API_KEY"),
@@ -292,7 +259,6 @@ class IDSAgent:
         )
 
     def initialize_agent(self):
-        """Initialize the agent with the React prompt"""
         prompt = PromptTemplate.from_template(
             """You are an expert IoT traffic analyzer and security agent. Your task is to analyze network traffic patterns 
             using multiple machine learning classifiers and provide insights about potential threats.
@@ -335,36 +301,30 @@ class IDSAgent:
             {agent_scratchpad}"""
         )
 
-        # Create React agent
         agent = create_react_agent(llm=self.llm, tools=self.tools, prompt=prompt)
 
-        # Create agent executor
         self.agent_executor = AgentExecutor(
             agent=agent,
             tools=self.tools,
             verbose=True,
             handle_parsing_errors=True,
-            max_iterations=15,  # Increased from default
-            max_execution_time=300,  # 5 minutes timeout
+            max_iterations=15,
+            max_execution_time=300,
             early_stopping_method="generate",
         )
 
     def analyze_with_classifier(self, classifier_type: str) -> str:
-        """Analyze the current sample with a specific classifier"""
         if self.current_sample is None:
             return "No sample available for analysis"
 
         if classifier_type not in self.models:
             return f"Classifier {classifier_type} not available"
 
-        # Prepare the features
         X = self.current_sample.drop("Label", axis=1)
 
-        # Scale features if needed
         if classifier_type in self.scalers:
             X = self.scalers[classifier_type].transform(X)
 
-        # Get predictions
         if classifier_type == "mlp":
             X_tensor = torch.FloatTensor(X).to(self.device)
             with torch.no_grad():
@@ -380,10 +340,8 @@ class IDSAgent:
             except:
                 probabilities = None
 
-        # Convert numeric predictions to class names
         predicted_classes = self.label_encoder.inverse_transform(predictions)
 
-        # Format results
         results = []
         for i, pred in enumerate(predicted_classes):
             if probabilities is not None:
@@ -395,24 +353,19 @@ class IDSAgent:
         return "\n".join(results)
 
     def analyze_with_majority_vote(self) -> str:
-        """Analyze the current sample with all classifiers and perform majority voting"""
         if self.current_sample is None:
             return "No sample available for analysis"
 
-        # Store predictions from all classifiers
         all_predictions = {}
         all_probabilities = {}
 
-        # Get predictions from each classifier
         X = self.current_sample.drop("Label", axis=1)
 
         for classifier_type, model in self.models.items():
-            # Scale features if needed
             X_scaled = X.copy()
             if classifier_type in self.scalers:
                 X_scaled = self.scalers[classifier_type].transform(X_scaled)
 
-            # Get predictions
             if classifier_type == "mlp":
                 X_tensor = torch.FloatTensor(X_scaled).to(self.device)
                 with torch.no_grad():
@@ -431,14 +384,12 @@ class IDSAgent:
             all_predictions[classifier_type] = predictions
             all_probabilities[classifier_type] = probabilities
 
-        # Format results for each sample
         final_results = []
         num_samples = len(self.current_sample)
 
         for sample_idx in range(num_samples):
             sample_results = [f"\n=== Sample {sample_idx + 1} Analysis ===\n"]
 
-            # Individual classifier results
             sample_results.append("Individual Classifier Predictions:")
             for classifier_type in self.models.keys():
                 pred_idx = all_predictions[classifier_type][sample_idx]
@@ -454,7 +405,6 @@ class IDSAgent:
                 else:
                     sample_results.append(f"🔹 {classifier_type.upper()}: {pred_class}")
 
-            # Majority vote
             sample_predictions = [pred[sample_idx] for pred in all_predictions.values()]
             unique_preds, counts = np.unique(sample_predictions, return_counts=True)
             majority_idx = unique_preds[np.argmax(counts)]
@@ -470,23 +420,19 @@ class IDSAgent:
         return "\n\n".join(final_results)
 
     def update_memory(self, observation: str, is_short_term: bool = True):
-        """Update either short-term or long-term memory"""
         memory = self.short_term_memory if is_short_term else self.long_term_memory
         memory.add_texts([observation])
 
-        # Save to disk
         memory_path = Path("memory") / (
             "short_term_memory" if is_short_term else "long_term_memory"
         )
         memory.save_local(str(memory_path))
 
     def query_memory(self, query: str, is_short_term: bool = True, k: int = 5):
-        """Query either short-term or long-term memory"""
         memory = self.short_term_memory if is_short_term else self.long_term_memory
         return memory.similarity_search(query, k=k)
 
     def display_traffic_summary(self, samples):
-        """Display a summary of traffic samples"""
         print("\n=== TRAFFIC SAMPLES TO ANALYZE ===\n")
 
         for i, sample in enumerate(samples.iterrows(), 1):
@@ -494,8 +440,7 @@ class IDSAgent:
             print(f"SAMPLE {i} OF {len(samples)}")
             print(f"{'='*60}\n")
 
-            # Get the traffic type - handle float labels by converting to int first
-            label_int = int(sample[1]["Label"])  # Convert float to int
+            label_int = int(sample[1]["Label"])
             traffic_type = self.label_encoder.inverse_transform([label_int])[0]
 
             print("📊 BASIC FLOW INFORMATION:")
@@ -540,11 +485,8 @@ class IDSAgent:
         print("All samples have been displayed.")
 
     def analyze(self, sample_df):
-        """Main analysis method"""
-        # Store the current sample
         self.current_sample = sample_df
 
-        # Create analysis prompt
         analysis_prompt = f"""Analyze these traffic samples using the available classifiers. 
         For each sample:
         1. Use multiple classifiers to predict the traffic type
@@ -555,10 +497,8 @@ class IDSAgent:
         
         Please start by using at least 3 different classifiers to get a comprehensive view."""
 
-        # Run agent
         response = self.agent_executor.invoke({"input": analysis_prompt})
 
-        # Update memories
         self.update_memory(str(response["output"]), is_short_term=True)
         if "high_severity" in str(response["output"]).lower():
             self.update_memory(str(response["output"]), is_short_term=False)
@@ -568,32 +508,26 @@ class IDSAgent:
     def search_cve(self, query: str) -> List[CVE]:
         """Search for CVE vulnerabilities using the NVD API 2.0 with structured output"""
         try:
-            # NVD API 2.0 endpoint
             base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
-            # Get API key from environment variable
             api_key = os.getenv("NVD_API_KEY")
 
-            # Clean and enhance query for keywordSearch
             clean_query = re.sub(r"[^\w\s-]", "", query)
             if clean_query.lower() == "icmp flood":
                 search_terms = ["ICMP flood", "ping flood", "ICMP DoS"]
             elif clean_query.lower() == "benign":
-                return []  # No vulnerabilities for benign traffic
+                return []
             else:
                 search_terms = [clean_query, "network attack", "network security"]
 
-            # Join search terms with OR for better coverage
             keyword_search = " OR ".join(f'"{term}"' for term in search_terms)
 
-            # Parameters for the API request
             params = {
                 "keywordSearch": keyword_search,
                 "resultsPerPage": 10,  # Limit to 10 results
                 "startIndex": 0
             }
 
-            # Headers including API key if available
             headers = {
                 "User-Agent": "IDS-Analysis-Tool/1.0",
                 "Content-Type": "application/json"
@@ -603,7 +537,6 @@ class IDSAgent:
 
             print(f"\nSearching CVEs with query: {keyword_search}")
 
-            # Make the request with timeout
             response = requests.get(
                 base_url, 
                 params=params, 
@@ -614,7 +547,6 @@ class IDSAgent:
             if response.status_code == 200:
                 data = response.json()
                 
-                # Check if we have any results
                 total_results = data.get("totalResults", 0)
                 if total_results == 0:
                     print(f"No CVEs found for query: {keyword_search}")
@@ -623,36 +555,30 @@ class IDSAgent:
                 vulnerabilities = data.get("vulnerabilities", [])
                 cves = []
 
-                for vuln in vulnerabilities[:5]:  # Limit to top 5 results
+                for vuln in vulnerabilities[:5]:
                     cve_data = vuln.get("cve", {})
                     
-                    # Get CVE ID
                     cve_id = cve_data.get("id")
                     if not cve_id or not re.match(r"^CVE-\d{4}-\d{4,7}$", cve_id):
                         continue
 
-                    # Get metrics - try v3.1 first, then v3.0, then v2
                     metrics = cve_data.get("metrics", {})
                     cvss_data = None
                     severity = "UNKNOWN"
                     score = "N/A"
 
-                    # Try CVSS v3.1 first
                     if "cvssMetricV31" in metrics and metrics["cvssMetricV31"]:
                         cvss_data = metrics["cvssMetricV31"][0].get("cvssData", {})
                         severity = cvss_data.get("baseSeverity", "UNKNOWN")
                         score = str(cvss_data.get("baseScore", "N/A"))
-                    # Then try CVSS v3.0
                     elif "cvssMetricV30" in metrics and metrics["cvssMetricV30"]:
                         cvss_data = metrics["cvssMetricV30"][0].get("cvssData", {})
                         severity = cvss_data.get("baseSeverity", "UNKNOWN")
                         score = str(cvss_data.get("baseScore", "N/A"))
-                    # Finally try CVSS v2
                     elif "cvssMetricV2" in metrics and metrics["cvssMetricV2"]:
                         cvss_data = metrics["cvssMetricV2"][0].get("cvssData", {})
                         base_score = cvss_data.get("baseScore", 0)
                         score = str(base_score)
-                        # Convert v2 score to severity
                         if base_score >= 7.0:
                             severity = "HIGH"
                         elif base_score >= 4.0:
@@ -660,7 +586,6 @@ class IDSAgent:
                         else:
                             severity = "LOW"
 
-                    # Get description (English only)
                     descriptions = cve_data.get("descriptions", [])
                     description = next(
                         (desc["value"] for desc in descriptions if desc.get("lang") == "en"),
@@ -694,7 +619,6 @@ class IDSAgent:
     def _get_alternative_vulnerability_data(self, query: str) -> List[CVE]:
         """Get vulnerability data from alternative sources when NVD API is unavailable"""
         try:
-            # Enhance search query based on traffic type
             clean_query = re.sub(r"[^\w\s-]", "", query)
             if clean_query.lower() == "icmp flood":
                 search_terms = [
@@ -720,10 +644,8 @@ class IDSAgent:
                 except Exception as e:
                     print(f"Error searching term '{search_term}': {str(e)}")
 
-            # Combine all results
             combined_results = "\n".join(all_results)
 
-            # Extract CVE IDs and information
             cves = []
             cve_pattern = r"CVE-\d{4}-\d{4,7}"
             severity_indicators = {
@@ -741,26 +663,22 @@ class IDSAgent:
                 if cve_id in seen_cves:
                     continue
 
-                # Find the surrounding context (200 characters before and after)
                 start = max(0, match.start() - 200)
                 end = min(len(combined_results), match.end() + 200)
                 context = combined_results[start:end]
 
-                # Determine severity based on context
-                severity = "MEDIUM"  # Default severity
+                severity = "MEDIUM"
                 context_lower = context.lower()
                 for sev, indicators in severity_indicators.items():
                     if any(ind in context_lower for ind in indicators):
                         severity = sev
                         break
 
-                # Extract a meaningful description
                 sentences = re.split(r"[.!?]+", context)
                 description = ""
                 for sentence in sentences:
                     if cve_id in sentence:
                         description = sentence.strip()
-                        # Add the next sentence for more context if available
                         next_idx = sentences.index(sentence) + 1
                         if next_idx < len(sentences):
                             description += ". " + sentences[next_idx].strip()
@@ -769,7 +687,6 @@ class IDSAgent:
                 if not description:
                     description = f"Vulnerability related to {query} attacks"
 
-                # Assign a score based on severity
                 score_ranges = {
                     "CRITICAL": "9.0-10.0",
                     "HIGH": "7.0-8.9",
@@ -802,7 +719,6 @@ class IDSAgent:
         try:
             print(f"\nSearching for security products related to: {search_query}")
 
-            # Enhance search query
             search_terms = [
                 f"{search_query} enterprise security solutions reviews",
                 f"top rated {search_query} security products comparison",
@@ -824,10 +740,8 @@ class IDSAgent:
                 print("No search results found")
                 return []
 
-            # Combine results
             combined_results = "\n\n".join(all_results)
 
-            # Extract product information using LLM
             prompt = f"""Extract the top security products/solutions from this text. Focus on enterprise-grade security solutions.
 
 Search Results:
@@ -849,13 +763,10 @@ Format:
     }}
 ]"""
 
-            # Get LLM response
             response = self.llm.invoke(prompt)
 
             try:
-                # Parse response
                 if isinstance(response, str):
-                    # Clean up the response
                     cleaned_response = re.sub(
                         r"^```json\s*|\s*```$", "", response.strip()
                     )
@@ -917,18 +828,15 @@ Format:
         need_lower = security_need.lower()
         desc_lower = product["description"].lower()
 
-        # Check if product name or type matches security need
         if any(word in product["name"].lower() for word in need_lower.split()):
             relevance += 3
 
         if any(word in product["type"].lower() for word in need_lower.split()):
             relevance += 2
 
-        # Check for security need keywords in description
         if any(word in desc_lower for word in need_lower.split()):
             relevance += 2
 
-        # Bonus for enterprise/professional terms
         enterprise_terms = [
             "enterprise",
             "professional",
@@ -943,7 +851,6 @@ Format:
 
     def _copy_static_files(self):
         """Copy static assets to the reports directory"""
-        # Create CSS file with Tailwind utilities
         tailwind_css = """
         @import 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css';
         @import 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css';
@@ -959,13 +866,11 @@ Format:
 
     def generate_report(self, samples_df):
         """Generate HTML report for all analyzed samples"""
-        # Clear existing reports
         if self.reports_dir.exists():
             shutil.rmtree(self.reports_dir)
         self.reports_dir.mkdir()
         self.static_dir.mkdir()
 
-        # Copy static files
         self._copy_static_files()
 
         all_samples = []
@@ -986,10 +891,8 @@ Format:
                 "traffic_type": self.label_encoder.inverse_transform(
                     [int(sample[1]["Label"])]
                 )[0],
-                # Add flow duration
                 "flow_duration": f"{sample[1]['Flow Duration']:.2f}",
                 
-                # Add packet information
                 "total_fwd_packets": int(sample[1]["Total Fwd Packet"]),
                 "fwd_packet_length_mean": f"{sample[1]['Fwd Packet Length Mean']:.2f}",
                 "total_bwd_packets": int(sample[1]["Total Bwd packets"]),
@@ -997,13 +900,11 @@ Format:
                 "total_length_fwd_packets": f"{sample[1]['Total Length of Fwd Packet']:.0f}",
                 "total_length_bwd_packets": f"{sample[1]['Total Length of Bwd Packet']:.0f}",
                 
-                # Add flow rates
                 "flow_packets_s": f"{sample[1]['Flow Packets/s']:.2f}",
                 "flow_bytes_s": f"{sample[1]['Flow Bytes/s']:.2f}",
                 "fwd_packets_s": f"{sample[1]['Fwd Packets/s']:.2f}",
                 "bwd_packets_s": f"{sample[1]['Bwd Packets/s']:.2f}",
                 
-                # Add TCP flags
                 "fin_flag_count": int(sample[1]["FIN Flag Count"]),
                 "syn_flag_count": int(sample[1]["SYN Flag Count"]),
                 "rst_flag_count": int(sample[1]["RST Flag Count"]),
@@ -1011,19 +912,15 @@ Format:
                 "ack_flag_count": int(sample[1]["ACK Flag Count"]),
                 "urg_flag_count": int(sample[1]["URG Flag Count"]),
                 
-                # Add activity pattern
                 "active_mean": f"{sample[1]['Active Mean']:.2f}",
                 "idle_mean": f"{sample[1]['Idle Mean']:.2f}",
             }
 
-            # Get classifier results
             classifier_results = self.analyze_with_majority_vote()
             sample_info.update(self._parse_classifier_results(classifier_results))
 
-            # Get related research
             traffic_type = sample_info["traffic_type"]
             try:
-                # Construct ArXiv query
                 if traffic_type.lower() == "icmp flood":
                     query = 'cat:cs.CR AND (ti:"DDoS" OR ti:"denial of service" OR abs:"ICMP flood")'
                 elif traffic_type.lower() == "benign":
@@ -1039,7 +936,6 @@ Format:
                     print(f"Found {len(arxiv_results)} papers")
 
                     if not arxiv_results:
-                        # Try fallback query
                         fallback_query = 'cat:cs.CR AND (ti:"network security" OR ti:"intrusion detection")'
                         print(f"\nNo results, trying fallback query: {fallback_query}")
                         arxiv_results = self.arxiv_retriever.get_relevant_documents(
@@ -1050,7 +946,6 @@ Format:
                     print(f"Error in ArXiv search: {str(e)}")
                     arxiv_results = []
 
-                # Parse and store the results
                 sample_info["arxiv_articles"] = self._parse_arxiv_results(arxiv_results)
                 print(
                     f"Total papers found and parsed: {len(sample_info['arxiv_articles'])}"
@@ -1064,7 +959,6 @@ Format:
             cve_results = self.search_cve(traffic_type)
             sample_info["cves"] = self._parse_cve_results(cve_results)
 
-            # Get product recommendations
             try:
                 if traffic_type.lower() == "icmp flood":
                     product_query = "DDoS and ICMP flood protection"
@@ -1084,10 +978,8 @@ Format:
 
             all_samples.append(sample_info)
 
-            # Generate individual sample report
             self._generate_sample_report(sample_info)
 
-        # Generate index page
         self._generate_index_page(all_samples)
 
         return str(self.reports_dir)
@@ -1161,22 +1053,18 @@ Format:
 
     def _parse_cve_results(self, vulnerabilities):
         """Format CVE results in a structured way"""
-        # If the vulnerabilities are already CVE objects, just return them
         if vulnerabilities and isinstance(vulnerabilities[0], CVE):
             return vulnerabilities[:5]
 
-        # Otherwise parse from raw data
         cves = []
         for vuln in vulnerabilities[:5]:
             try:
                 cve = vuln["cve"]
                 cve_id = cve["id"]
 
-                # Validate CVE ID format
                 if not re.match(r"^CVE-\d{4}-\d{4,7}$", cve_id):
                     continue
 
-                # Get English description
                 description = next(
                     (
                         desc["value"]
@@ -1217,11 +1105,9 @@ Format:
 
     def _parse_product_results(self, products):
         """Parse product recommendations into structured data"""
-        # If products are already SecurityProduct objects, just return them
         if products and isinstance(products[0], SecurityProduct):
             return products[:5]
 
-        # Otherwise parse from raw data
         return [
             SecurityProduct(
                 name=product["name"],
@@ -1252,7 +1138,7 @@ Format:
     def _find_available_port(self, start_port=8000):
         """Find an available port starting from start_port"""
         port = start_port
-        while port < start_port + 100:  # Try up to 100 ports
+        while port < start_port + 100:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.bind(("", port))
@@ -1263,31 +1149,26 @@ Format:
 
     def _start_http_server(self, port):
         """Start HTTP server in a separate thread"""
-        # Use absolute path of reports directory
         os.chdir(str(self.reports_dir.absolute()))
 
         server = HTTPServer(("", port), SimpleHTTPRequestHandler)
         server_thread = threading.Thread(target=server.serve_forever)
-        server_thread.daemon = True  # Thread will exit when main program exits
+        server_thread.daemon = True
         server_thread.start()
 
         return server
 
     def serve_reports(self):
         """Serve the reports directory and open in browser"""
-        # Find an available port
         port = self._find_available_port()
 
-        # Print debug information
         print(f"\nServing reports from: {self.reports_dir.absolute()}")
         print(f"Contents of reports directory:")
         for item in self.reports_dir.iterdir():
             print(f"  - {item.name}")
 
-        # Start the server
         server = self._start_http_server(port)
 
-        # Open the browser
         url = f"http://localhost:{port}/index.html"
         print(f"\nStarting report server at {url}")
         webbrowser.open(url)
@@ -1311,13 +1192,10 @@ Format:
 
 
 if __name__ == "__main__":
-    # Initialize the agent
     agent = IDSAgent()
 
-    # Test arXiv search and product recommendations directly
     print("\n=== Testing ArXiv Search ===")
     try:
-        # Test with a known traffic type
         test_query = "DDoS attack"
         print(f"\nTesting arXiv search with query: {test_query}")
         arxiv_results = agent.arxiv_retriever.get_relevant_documents(
@@ -1347,7 +1225,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error in product recommendations test: {str(e)}")
 
-    # Load and sample test data
     print("\n=== Testing Full Analysis ===")
     import pandas as pd
 
@@ -1356,9 +1233,7 @@ if __name__ == "__main__":
 
     print(f"\nAnalyzing {len(samples)} random samples...")
 
-    # Generate HTML report
     report_path = agent.generate_report(samples)
     print(f"\nReport generated at: {report_path}")
 
-    # Serve and open the reports
     agent.serve_reports()
