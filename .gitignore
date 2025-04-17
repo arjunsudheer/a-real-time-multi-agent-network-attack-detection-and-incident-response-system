@@ -21,3 +21,5 @@ agents/reports/*.html
 .env
 datasets
 */__pycache__
+
+*.zip

@@ -254,7 +254,7 @@ class IDSAgent:
     def initialize_llm(self):
         self.llm = GoogleGenerativeAI(
             model="gemini-2.0-flash",
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            google_api_key="AIzaSyC72eGdAEHU9ZBAhXJWAg6b8fCQSRmgDBU",
             temperature=0.3,
         )
 
@@ -506,11 +506,11 @@ class IDSAgent:
         return response["output"]
 
     def search_cve(self, query: str) -> List[CVE]:
-        """Search for CVE vulnerabilities using the NVD API 2.0 with structured output"""
         try:
             base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
-            api_key = os.getenv("NVD_API_KEY")
+            #api_key = os.getenv("NVD_API_KEY")
+            api_key = "ea20866b-6e87-46aa-a1d2-1d4a7bdede0"
 
             clean_query = re.sub(r"[^\w\s-]", "", query)
             if clean_query.lower() == "icmp flood":
@@ -524,7 +524,7 @@ class IDSAgent:
 
             params = {
                 "keywordSearch": keyword_search,
-                "resultsPerPage": 10,  # Limit to 10 results
+                "resultsPerPage": 10,
                 "startIndex": 0
             }
 
@@ -617,7 +617,6 @@ class IDSAgent:
             return self._get_alternative_vulnerability_data(query)
 
     def _get_alternative_vulnerability_data(self, query: str) -> List[CVE]:
-        """Get vulnerability data from alternative sources when NVD API is unavailable"""
         try:
             clean_query = re.sub(r"[^\w\s-]", "", query)
             if clean_query.lower() == "icmp flood":
@@ -705,7 +704,7 @@ class IDSAgent:
                 )
                 seen_cves.add(cve_id)
 
-                if len(cves) >= 5:  # Limit to 5 results
+                if len(cves) >= 5:
                     break
 
             return cves
@@ -715,7 +714,6 @@ class IDSAgent:
             return []
 
     def get_product_recommendations(self, search_query: str) -> List[SecurityProduct]:
-        """Get security product recommendations with structured output"""
         try:
             print(f"\nSearching for security products related to: {search_query}")
 
@@ -774,7 +772,6 @@ Format:
                 else:
                     products_data = response
 
-                # Convert to SecurityProduct objects
                 products = []
                 for product_data in products_data:
                     try:
@@ -801,7 +798,6 @@ Format:
             return []
 
     def _categorize_security_product(self, description):
-        """Categorize security product based on description"""
         categories = {
             "Network Security": ["firewall", "ids", "ips", "network", "traffic"],
             "Endpoint Protection": ["endpoint", "antivirus", "edr", "xdr"],
@@ -823,7 +819,6 @@ Format:
         return " & ".join(matches[:2]) if matches else "General Security"
 
     def _calculate_product_relevance(self, product, security_need):
-        """Calculate product relevance score based on security need"""
         relevance = 0
         need_lower = security_need.lower()
         desc_lower = product["description"].lower()
@@ -850,7 +845,6 @@ Format:
         return relevance
 
     def _copy_static_files(self):
-        """Copy static assets to the reports directory"""
         tailwind_css = """
         @import 'https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css';
         @import 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css';
@@ -865,7 +859,6 @@ Format:
         css_file.write_text(tailwind_css)
 
     def generate_report(self, samples_df):
-        """Generate HTML report for all analyzed samples"""
         if self.reports_dir.exists():
             shutil.rmtree(self.reports_dir)
         self.reports_dir.mkdir()
@@ -876,10 +869,8 @@ Format:
         all_samples = []
 
         for i, sample in enumerate(samples_df.iterrows(), 1):
-            # Store the current sample
             self.current_sample = sample[1].to_frame().T
 
-            # Get basic information
             sample_info = {
                 "id": i,
                 "source_port": int(sample[1]["Src Port"]),
@@ -892,26 +883,22 @@ Format:
                     [int(sample[1]["Label"])]
                 )[0],
                 "flow_duration": f"{sample[1]['Flow Duration']:.2f}",
-                
                 "total_fwd_packets": int(sample[1]["Total Fwd Packet"]),
                 "fwd_packet_length_mean": f"{sample[1]['Fwd Packet Length Mean']:.2f}",
                 "total_bwd_packets": int(sample[1]["Total Bwd packets"]),
                 "bwd_packet_length_mean": f"{sample[1]['Bwd Packet Length Mean']:.2f}",
                 "total_length_fwd_packets": f"{sample[1]['Total Length of Fwd Packet']:.0f}",
                 "total_length_bwd_packets": f"{sample[1]['Total Length of Bwd Packet']:.0f}",
-                
                 "flow_packets_s": f"{sample[1]['Flow Packets/s']:.2f}",
                 "flow_bytes_s": f"{sample[1]['Flow Bytes/s']:.2f}",
                 "fwd_packets_s": f"{sample[1]['Fwd Packets/s']:.2f}",
                 "bwd_packets_s": f"{sample[1]['Bwd Packets/s']:.2f}",
-                
                 "fin_flag_count": int(sample[1]["FIN Flag Count"]),
                 "syn_flag_count": int(sample[1]["SYN Flag Count"]),
                 "rst_flag_count": int(sample[1]["RST Flag Count"]),
                 "psh_flag_count": int(sample[1]["PSH Flag Count"]),
                 "ack_flag_count": int(sample[1]["ACK Flag Count"]),
                 "urg_flag_count": int(sample[1]["URG Flag Count"]),
-                
                 "active_mean": f"{sample[1]['Active Mean']:.2f}",
                 "idle_mean": f"{sample[1]['Idle Mean']:.2f}",
             }
@@ -955,7 +942,6 @@ Format:
                 print(f"Error retrieving research papers: {str(e)}")
                 sample_info["arxiv_articles"] = []
 
-            # Get CVE information
             cve_results = self.search_cve(traffic_type)
             sample_info["cves"] = self._parse_cve_results(cve_results)
 
@@ -985,13 +971,11 @@ Format:
         return str(self.reports_dir)
 
     def _parse_classifier_results(self, results):
-        """Parse classifier results into structured data"""
         classifiers = []
         majority_vote = {}
 
         for line in results.split("\n"):
             if "🔹" in line and ":" in line:
-                # Parse individual classifier results
                 classifier_name = line.split("🔹")[1].split(":")[0].strip()
                 prediction = line.split(":")[1].split("(")[0].strip()
                 confidence = None
@@ -1017,7 +1001,6 @@ Format:
         return {"classifiers": classifiers, "majority_vote": majority_vote}
 
     def _parse_arxiv_results(self, documents):
-        """Parse ArXiv search results into structured paper data"""
         papers = []
 
         try:
@@ -1025,7 +1008,6 @@ Format:
 
             for doc in documents:
                 try:
-                    # ArxivRetriever gives us structured metadata
                     metadata = doc.metadata
                     print(f"Available fields in metadata: {list(metadata.keys())}")
 
@@ -1052,7 +1034,6 @@ Format:
             return []
 
     def _parse_cve_results(self, vulnerabilities):
-        """Format CVE results in a structured way"""
         if vulnerabilities and isinstance(vulnerabilities[0], CVE):
             return vulnerabilities[:5]
 
@@ -1077,7 +1058,6 @@ Format:
                 if not description:
                     continue
 
-                # Get metrics
                 metrics = cve.get("metrics", {})
                 severity = "N/A"
                 score = "N/A"
@@ -1104,7 +1084,6 @@ Format:
         return cves
 
     def _parse_product_results(self, products):
-        """Parse product recommendations into structured data"""
         if products and isinstance(products[0], SecurityProduct):
             return products[:5]
 
@@ -1119,7 +1098,6 @@ Format:
         ]
 
     def _generate_sample_report(self, sample_info):
-        """Generate HTML report for individual sample"""
         template = self.jinja_env.get_template("traffic_analysis.html")
         sample_info["current_time"] = datetime.utcnow()
         output = template.render(**sample_info)
@@ -1128,7 +1106,6 @@ Format:
         output_path.write_text(output)
 
     def _generate_index_page(self, all_samples):
-        """Generate index page with all samples"""
         template = self.jinja_env.get_template("index.html")
         output = template.render(samples=all_samples, current_time=datetime.utcnow())
 
@@ -1136,7 +1113,6 @@ Format:
         output_path.write_text(output)
 
     def _find_available_port(self, start_port=8000):
-        """Find an available port starting from start_port"""
         port = start_port
         while port < start_port + 100:
             try:
@@ -1148,7 +1124,6 @@ Format:
         raise RuntimeError("Could not find an available port")
 
     def _start_http_server(self, port):
-        """Start HTTP server in a separate thread"""
         os.chdir(str(self.reports_dir.absolute()))
 
         server = HTTPServer(("", port), SimpleHTTPRequestHandler)
@@ -1159,7 +1134,6 @@ Format:
         return server
 
     def serve_reports(self):
-        """Serve the reports directory and open in browser"""
         port = self._find_available_port()
 
         print(f"\nServing reports from: {self.reports_dir.absolute()}")
@@ -1183,7 +1157,6 @@ Format:
             server.server_close()
 
     def generate_analysis(self, cves, products, papers) -> SecurityAnalysis:
-        """Generate complete security analysis with structured output"""
         return SecurityAnalysis(
             cves=self._parse_cve_results(cves),
             products=self._parse_product_results(products),
@@ -1229,7 +1202,7 @@ if __name__ == "__main__":
     import pandas as pd
 
     test_df = pd.read_csv("test.csv")
-    samples = test_df.sample(n=5, random_state=42)  # Take 5 random samples
+    samples = test_df.sample(n=5, random_state=42)
 
     print(f"\nAnalyzing {len(samples)} random samples...")
 
