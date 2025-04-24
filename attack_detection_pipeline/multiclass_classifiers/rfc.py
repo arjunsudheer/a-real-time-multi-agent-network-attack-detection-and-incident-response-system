@@ -1,5 +1,3 @@
-# Author: Arjun Sudheer
-
 from pathlib import Path
 import joblib
 import numpy as np
@@ -10,25 +8,29 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 
 class RFCNetworkAttackClassifier:
-    def __init__(self, X_train, y_train, dataset):
+    def __init__(
+        self, X_train: pd.DataFrame, y_train: np.ndarray, dataset_directory: Path
+    ) -> None:
         self.X_train = X_train
         self.y_train = y_train
-        self.dataset = dataset
+        self.dataset_directory = dataset_directory
 
         # Load an already trained classifier model if it exists
         # Otherwise, create a new classifier model to train
-        if Path(f"{self.dataset}/saved_classifier_models/rfc_trained.pkl").exists():
+        if Path(
+            f"{self.dataset_directory}/saved_classifier_models/rfc_trained.pkl"
+        ).exists():
             self.best_clf = joblib.load(
-                f"{self.dataset}/saved_classifier_models/rfc_trained.pkl"
+                f"{self.dataset_directory}/saved_classifier_models/rfc_trained.pkl"
             )
         else:
-            Path(f"{self.dataset}/saved_classifier_models").mkdir(
+            Path(f"{self.dataset_directory}/saved_classifier_models").mkdir(
                 exist_ok=True, parents=True
             )
             self.__train()
 
-    def __train(self):
-        def objective(trial):
+    def __train(self) -> None:
+        def objective(trial) -> float:
             n_estimators = trial.suggest_int("n_estimators", 50, 150, step=50)
             max_depth = trial.suggest_categorical("max_depth", [20, 30, None])
             min_samples_split = trial.suggest_int("min_samples_split", 2, 10)
@@ -56,7 +58,7 @@ class RFCNetworkAttackClassifier:
             )
 
             # Compute cross-validated F1-score (weighted)
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
             scores = cross_val_score(
                 clf,
                 self.X_train,
@@ -81,8 +83,8 @@ class RFCNetworkAttackClassifier:
         # Save the best model
         joblib.dump(
             self.best_clf,
-            f"{self.dataset}/saved_classifier_models/rfc_trained.pkl",
+            f"{self.dataset_directory}/saved_classifier_models/rfc_trained.pkl",
         )
 
-    def predict_network_attack_class(self, X_test):
+    def predict_network_attack_class(self, X_test: pd.DataFrame) -> np.ndarray:
         return self.best_clf.predict(X_test)

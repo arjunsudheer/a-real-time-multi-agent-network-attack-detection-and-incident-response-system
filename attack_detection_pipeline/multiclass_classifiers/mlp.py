@@ -1,5 +1,4 @@
-# Author: Arjun Sudheer
-
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -10,43 +9,48 @@ from sklearn.model_selection import StratifiedKFold
 
 
 class NetworkDataset(Dataset):
-    def __init__(self, features, labels):
+    def __init__(self, features: torch.Tensor, labels: torch.Tensor):
         self.features = features
         self.labels = labels
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.features)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         return self.features[idx], self.labels[idx]
 
 
 class MLPNetworkAttackClassifier:
-    def __init__(self, X_train, y_train, dataset):
+    def __init__(
+        self, X_train: pd.DataFrame, y_train: np.ndarray, dataset_directory: Path
+    ):
         self.X_train = X_train
         self.y_train = y_train
-        self.dataset = dataset
+        self.dataset_directory = dataset_directory
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = self.__build_model().to(self.device)
 
         # Load an already trained classifier model if it exists
         # Otherwise, create a new classifier model to train
-        if Path(f"{self.dataset}/saved_classifier_models/mlp_trained.pt").exists():
+        if Path(
+            f"{self.dataset_directory}/saved_classifier_models/mlp_trained.pt"
+        ).exists():
             self.clf = self.model.load_state_dict(
                 torch.load(
-                    Path(f"{self.dataset}/saved_classifier_models") / "mlp_trained.pt"
+                    Path(f"{self.dataset_directory}/saved_classifier_models")
+                    / "mlp_trained.pt"
                 )
             )
         else:
-            Path(f"{self.dataset}/saved_classifier_models").mkdir(
+            Path(f"{self.dataset_directory}/saved_classifier_models").mkdir(
                 exist_ok=True, parents=True
             )
             self.kf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
             self.patience = 7
             self.__train()
 
-    def __build_model(self):
+    def __build_model(self) -> nn.Sequential:
         # Dynamically calculate the number of classes
         num_classes = len(np.unique(self.y_train))
 
@@ -60,7 +64,7 @@ class MLPNetworkAttackClassifier:
             nn.Linear(64, num_classes),
         )
 
-    def __train(self):
+    def __train(self) -> None:
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
 
@@ -127,7 +131,7 @@ class MLPNetworkAttackClassifier:
                     patience_counter = 0
                     torch.save(
                         self.model.state_dict(),
-                        Path(f"{self.dataset}/saved_classifier_models")
+                        Path(f"{self.dataset_directory}/saved_classifier_models")
                         / "mlp_trained.pt",
                     )
                 else:
@@ -137,10 +141,11 @@ class MLPNetworkAttackClassifier:
                     print("Early stopping triggered.")
                     break
 
-    def predict_network_attack_class(self, X_test):
+    def predict_network_attack_class(self, X_test: pd.DataFrame) -> np.ndarray:
         self.model.load_state_dict(
             torch.load(
-                Path(f"{self.dataset}/saved_classifier_models") / "mlp_trained.pt"
+                Path(f"{self.dataset_directory}/saved_classifier_models")
+                / "mlp_trained.pt"
             )
         )
         self.model.eval()
@@ -154,4 +159,4 @@ class MLPNetworkAttackClassifier:
                 outputs = self.model(inputs)
                 y_pred.extend(torch.argmax(outputs, dim=1).cpu().numpy())
 
-        return y_pred
+        return np.array(y_pred)
