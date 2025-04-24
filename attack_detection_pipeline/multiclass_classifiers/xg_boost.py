@@ -1,35 +1,38 @@
-# Author: Arjun Sudheer
-
 import numpy as np
 from pathlib import Path
+import pandas as pd
 import xgboost as xgb
 from sklearn.model_selection import StratifiedKFold
 
 
 class XGBoostNetworkAttackClassifier:
-    def __init__(self, X_train, y_train, dataset):
+    def __init__(
+        self, X_train: pd.DataFrame, y_train: pd.DataFrame, dataset_directory: Path
+    ) -> None:
         # Split data into training and validation sets
         self.X_train = X_train
         self.y_train = y_train
         self.num_classes = len(np.unique(self.y_train))
-        self.dataset = dataset
+        self.dataset_directory = dataset_directory
 
         # Load an already trained classifier model if it exists
         # Otherwise, create a new classifier model to train
-        if Path(f"{self.dataset}/saved_classifier_models/xgboost_trained.bin").exists():
+        if Path(
+            f"{self.dataset_directory}/saved_classifier_models/xgboost_trained.bin"
+        ).exists():
             self.clf = xgb.Booster()
             self.clf.load_model(
-                f"{self.dataset}/saved_classifier_models/xgboost_trained.bin"
+                f"{self.dataset_directory}/saved_classifier_models/xgboost_trained.bin"
             )
 
         else:
-            Path(f"{self.dataset}/saved_classifier_models").mkdir(
+            Path(f"{self.dataset_directory}/saved_classifier_models").mkdir(
                 exist_ok=True, parents=True
             )
             self.kf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
             self.__train()
 
-    def __train(self):
+    def __train(self) -> None:
         best_val_score = float("inf")
         best_fold_model = None
 
@@ -73,10 +76,10 @@ class XGBoostNetworkAttackClassifier:
 
         # Save the trained classifier model
         best_fold_model.save_model(
-            f"{self.dataset}/saved_classifier_models/xgboost_trained.bin",
+            f"{self.dataset_directory}/saved_classifier_models/xgboost_trained.bin",
         )
 
-    def predict_network_attack_class(self, X_test):
+    def predict_network_attack_class(self, X_test: pd.DataFrame) -> np.ndarray:
         dtest = xgb.DMatrix(X_test.values)
         y_pred_prob = self.clf.predict(dtest)
         y_pred = np.argmax(y_pred_prob, axis=1)
