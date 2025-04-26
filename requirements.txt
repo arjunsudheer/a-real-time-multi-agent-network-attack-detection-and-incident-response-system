@@ -16,6 +16,7 @@ pydantic>=2.5.0
 jinja2>=3.1.2
 
 pathlib
+pyshark
 numpy
 pandas
 scikit-learn
@@ -24,11 +25,10 @@ joblib
 torch
 torchvision
 torchaudio
+optuna
+matplotlib
 
 cudf-cu12==25.2.*
 dask-cudf-cu12==25.2.*
 cuml-cu12==25.2.*
 
-optuna
-
-pyshark
