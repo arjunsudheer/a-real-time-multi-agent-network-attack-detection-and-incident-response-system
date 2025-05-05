@@ -12,6 +12,16 @@ class KNNNetworkAttackClassifier:
     def __init__(
         self, X_train: pd.DataFrame, y_train: np.ndarray, dataset_directory: Path
     ) -> None:
+        """
+        __init__ initializes train dataset and dataset directory.
+
+        Trains a new KNN classifier if no saved weight was found. If a saved weight was found, the the pretrained classifier is loaded.
+
+        Args:
+            X_train (pd.DataFrame): The train samples.
+            y_train (np.ndarray): The train labels.
+            dataset_directory (Path): The parent directory to store the classifier weights.
+        """
         self.X_train = cp.asarray(X_train)
         self.y_train = cp.asarray(y_train)
         self.dataset_directory = dataset_directory
@@ -27,7 +37,22 @@ class KNNNetworkAttackClassifier:
             self.__train()
 
     def __train(self) -> None:
-        def objective(trial) -> float:
+        """
+        __train trains the KNN classifier using Optuna for hyperparameter tuning.
+        """
+
+        def objective(trial: optuna.Trial) -> float:
+            """
+            objective trains the KNN classifier using Optuna.
+
+            Evaluates classifier performance using the weighted-F1 score.
+
+            Args:
+                trial (optuna.Trial): An Optuna trial instance.
+
+            Returns:
+                float: the mean cross validation weighted f1-score.
+            """
             n_neighbors = trial.suggest_int("n_neighbors", 3, 9, step=3)
             metric = trial.suggest_categorical(
                 "metric", ["euclidean", "manhattan", "chebyshev", "minkowski"]
@@ -66,4 +91,27 @@ class KNNNetworkAttackClassifier:
         )
 
     def predict_network_attack_class(self, X_test: pd.DataFrame) -> np.ndarray:
+        """
+        predict_network_attack_class predicts the attack class on the provided samples.
+
+        Args:
+            X_test (pd.DataFrame): The samples to make predictions on.
+
+        Returns:
+            np.ndarray: The KNN classifier predictions.
+        """
         return self.best_clf.predict(cp.asarray(X_test)).get()
+
+    def predict_network_attack_class_probabilities(
+        self, X_test: pd.DataFrame
+    ) -> np.ndarray:
+        """
+        predict_network_attack_class_probabilities predicts the attack class probabilities on the provided samples.
+
+        Args:
+            X_test (pd.DataFrame): The samples to make predictions on.
+
+        Returns:
+            np.ndarray: The KNN classifier predictions.
+        """
+        return self.best_clf.predict_proba(cp.asarray(X_test)).get()
