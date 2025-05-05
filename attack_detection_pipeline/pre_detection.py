@@ -20,6 +20,16 @@ class PreDetection:
     def __init__(
         self, X_train: pd.DataFrame, y_train: np.ndarray, dataset_directory: Path
     ) -> None:
+        """
+        __init__ initializes train dataset and dataset directory.
+
+        Trains a new Random Forest classifier if no saved weight was found. If a saved weight was found, the the pretrained classifier is loaded. Converts multiclass labels into binary labels by considering "Benign" as negative class and everything else as the positive class (malicious).
+
+        Args:
+            X_train (pd.DataFrame): The train samples.
+            y_train (np.ndarray): The train labels.
+            dataset_directory (Path): The parent directory to store the classifier weights.
+        """
         self.X_train = X_train
         # Convert to binary labels
         self.y_train = np.where(y_train == "Benign", 0, 1)
@@ -40,7 +50,22 @@ class PreDetection:
             self.__train()
 
     def __train(self) -> None:
-        def objective(trial) -> float:
+        """
+        __train trains the Random Forest classifier using Optuna for hyperparameter tuning.
+        """
+
+        def objective(trial: optuna.Trial) -> float:
+            """
+            objective trains the Random Forest classifier using Optuna.
+
+            Evaluates classifier performance using the balanced accuracy score.
+
+            Args:
+                trial (optuna.Trial): An Optuna trial instance.
+
+            Returns:
+                float: the mean cross validation weighted f1-score.
+            """
             n_estimators = trial.suggest_int("n_estimators", 50, 150, step=50)
             max_depth = trial.suggest_categorical("max_depth", [20, 30, None])
             min_samples_split = trial.suggest_int("min_samples_split", 2, 10)
@@ -97,6 +122,15 @@ class PreDetection:
         )
 
     def __get_classifier_predictions(self, X_test: pd.DataFrame) -> np.ndarray:
+        """
+        predict_network_attack_class predicts the attack class on the provided samples.
+
+        Args:
+            X_test (pd.DataFrame): The samples to make predictions on.
+
+        Returns:
+            np.ndarray: The Random Forest classifier predictions.
+        """
         return self.best_clf.predict(X_test)
 
     def save_classification_metrics(
@@ -105,6 +139,16 @@ class PreDetection:
         y_test: np.ndarray,
         unique_labels: np.array = np.array(["Benign", "Malicious"]),
     ):
+        """
+        save_classification_metrics saves the classifier metrics to a directory.
+
+        Saves the classifier accuracy, precision, recall, f1-score, and confusion matrix results on the test dataset to a file. Generates a Confusion Matrix Display.
+
+        Args:
+            X_test (pd.DataFrame): The test samples to make predictions on.
+            y_test (np.ndarray): The true test labels to use for evaluation.
+            unique_labels (np.ndarray): A list of the unique labels that exist in the test dataset. Used for creating the Confusion Matrix Display.
+        """
         y_pred = self.__get_classifier_predictions(X_test)
         # Convert to binary labels
         y_test = np.where(y_test == "Benign", 0, 1)
@@ -149,6 +193,16 @@ class PreDetection:
         preprocessed_samples: pd.DataFrame,
         original_samples: pd.DataFrame,
     ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+        """
+        filter_low_agreement_samples identifies any samples that have a positive (malicious) prediction.
+
+        Args:
+            preprocessed_malicious_samples (pd.DataFrame): The preprocessed and transformed samples to make the classifier predictions on.
+            original_malicious_samples (pd.DataFrame): The original un-transformed samples to filter for use with the post-detection stage later on if needed.
+
+        Returns:
+            tuple[pd.DataFrame, np.ndarray, np.ndarray]: The predicted malicious preprocessed samples, original malicious samples, and the malicious sample indices.
+        """
         # Pre-detection predictions
         predictions = self.__get_classifier_predictions(preprocessed_samples)
 

@@ -9,6 +9,16 @@ class XGBoostNetworkAttackClassifier:
     def __init__(
         self, X_train: pd.DataFrame, y_train: pd.DataFrame, dataset_directory: Path
     ) -> None:
+        """
+        __init__ initializes train dataset and dataset directory, and calculate the number of unique labels.
+
+        Trains a new XGBoost classifier if no saved weight was found. If a saved weight was found, the the pretrained classifier is loaded.
+
+        Args:
+            X_train (pd.DataFrame): The train samples.
+            y_train (np.ndarray): The train labels.
+            dataset_directory (Path): The parent directory to store the classifier weights.
+        """
         # Split data into training and validation sets
         self.X_train = X_train
         self.y_train = y_train
@@ -20,8 +30,8 @@ class XGBoostNetworkAttackClassifier:
         if Path(
             f"{self.dataset_directory}/saved_classifier_models/xgboost_trained.bin"
         ).exists():
-            self.clf = xgb.Booster()
-            self.clf.load_model(
+            self.best_clf = xgb.Booster()
+            self.best_clf.load_model(
                 f"{self.dataset_directory}/saved_classifier_models/xgboost_trained.bin"
             )
 
@@ -33,6 +43,11 @@ class XGBoostNetworkAttackClassifier:
             self.__train()
 
     def __train(self) -> None:
+        """
+        __train trains the XGBoost classifier.
+
+        Uses log loss for multi-class data.
+        """
         best_val_score = float("inf")
         best_fold_model = None
 
@@ -57,7 +72,7 @@ class XGBoostNetworkAttackClassifier:
             num_rounds = 100
             evallist = [(dtrain, "train"), (dval, "eval")]
 
-            self.clf = xgb.train(
+            self.best_clf = xgb.train(
                 params,
                 dtrain,
                 num_rounds,
@@ -67,12 +82,12 @@ class XGBoostNetworkAttackClassifier:
             )
 
             # Calculate validation score (use the last validation score in the logs)
-            val_score = self.clf.best_score
+            val_score = self.best_clf.best_score
 
             # Save the best model based on validation score
             if val_score < best_val_score:
                 best_val_score = val_score
-                best_fold_model = self.clf.copy()
+                best_fold_model = self.best_clf.copy()
 
         # Save the trained classifier model
         best_fold_model.save_model(
@@ -80,7 +95,31 @@ class XGBoostNetworkAttackClassifier:
         )
 
     def predict_network_attack_class(self, X_test: pd.DataFrame) -> np.ndarray:
-        dtest = xgb.DMatrix(X_test.values)
-        y_pred_prob = self.clf.predict(dtest)
+        """
+        predict_network_attack_class predicts the attack class on the provided samples.
+
+        Args:
+            X_test (pd.DataFrame): The samples to make predictions on.
+
+        Returns:
+            np.ndarray: The XGBoost classifier predictions.
+        """
+        y_pred_prob = self.predict_network_attack_class_probabilities(X_test)
         y_pred = np.argmax(y_pred_prob, axis=1)
         return y_pred
+
+    def predict_network_attack_class_probabilities(
+        self, X_test: pd.DataFrame
+    ) -> np.ndarray:
+        """
+        predict_network_attack_class_probabilities predicts the attack class probabilities on the provided samples.
+
+        Args:
+            X_test (pd.DataFrame): The samples to make predictions on.
+
+        Returns:
+            np.ndarray: The XGBoost classifier predictions.
+        """
+        dtest = xgb.DMatrix(X_test.values)
+        y_pred_prob = self.best_clf.predict(dtest)
+        return y_pred_prob
