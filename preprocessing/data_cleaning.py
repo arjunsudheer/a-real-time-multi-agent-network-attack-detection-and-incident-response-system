@@ -72,7 +72,7 @@ def preprocess_dataset(
     df: pd.DataFrame,
     label_column: str,
     parent_directory: Path,
-    sample_size: float = 0.1,
+    sample_size: float = 0.2,
 ) -> None:
     def clean_data(
         df: pd.DataFrame, label_column: str, min_frequency_threshold: int = 10
@@ -131,6 +131,11 @@ def preprocess_dataset(
         X_test = test_df.drop(columns=[label_column])
         y_test = test_df[label_column]
 
+        # Save train dataset to know the expected format for the classifiers
+        X_train.iloc[0].to_frame().T.to_csv(
+            parent_directory / "classifier_data_format.csv", index=False
+        )
+
         # Transform and scale features
         X_train_preprocessed = transform_and_scale_features(
             X_train, parent_directory, fit_scaler=True
@@ -147,9 +152,6 @@ def preprocess_dataset(
             y=y_test, X=X_test_preprocessed, label_column="Label", lb=lb
         )
 
-        # Save train dataset to know the expected format for the classifiers
-        X_train_preprocessed.to_csv(parent_directory / "classifier_data_format.csv")
-
         return [
             X_train_preprocessed,
             y_train_preprocessed,
@@ -164,16 +166,30 @@ def preprocess_dataset(
     # Only use a portion of the dataset to improve speed and satisfy memory limitations
     df = df.sample(frac=sample_size, random_state=42)
 
+    # Save initial dataset metrics
+    with open(parent_directory / "dataset_metrics.txt", "w") as f:
+        f.write("Initial Dataset Metrics\n")
+        f.write(f"Dataset Size: {df.memory_usage(index=True, deep=True).sum()} bytes\n")
+        f.write(f"Number of columns: {len(df.columns.unique())}\n")
+        f.write(f"Unique columns: {df.columns.unique()}\n\n")
+
     # Drop irrelevant features
-    # fsa = FeatureSelectionAgent(
-    #     df=df, label_column=label_column, dataset_name=parent_directory.name
-    # )
-    # df = fsa.select_features()
+    fsa = FeatureSelectionAgent(
+        df=df, label_column=label_column, dataset_name=parent_directory.name
+    )
+    df = fsa.select_features()
 
     # Clean data
     df = clean_data(df, label_column)
     # Remove non-numeric characters from numeric columns
     df = clean_numeric_columns(df)
+
+    # Save cleaned dataset metrics
+    with open(parent_directory / "dataset_metrics.txt", "a") as f:
+        f.write("Cleaned Dataset Metrics\n")
+        f.write(f"Dataset Size: {df.memory_usage(index=True, deep=True).sum()} bytes\n")
+        f.write(f"Number of columns: {len(df.columns.unique())}\n")
+        f.write(f"Unique columns: {df.columns.unique()}")
 
     # Split dataset into train and test
     # Use the FeatureHasher, StandardScaler, and LabelBinarizer to transform the datasets
