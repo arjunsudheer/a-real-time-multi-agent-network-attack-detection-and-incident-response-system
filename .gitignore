@@ -22,3 +22,5 @@ agents/labeling_agent_long_term_memory
 .env
 datasets
 */__pycache__
+
+*.zip
