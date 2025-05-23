@@ -1,5 +1,3 @@
-# Author: Arjun Sudheer
-
 from pathlib import Path
 import joblib
 import numpy as np
@@ -10,25 +8,54 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 
 class RFCNetworkAttackClassifier:
-    def __init__(self, X_train, y_train, dataset):
+    def __init__(
+        self, X_train: pd.DataFrame, y_train: np.ndarray, dataset_directory: Path
+    ) -> None:
+        """
+        __init__ initializes train dataset and dataset directory.
+
+        Trains a new Random Forest classifier if no saved weight was found. If a saved weight was found, the the pretrained classifier is loaded.
+
+        Args:
+            X_train (pd.DataFrame): The train samples.
+            y_train (np.ndarray): The train labels.
+            dataset_directory (Path): The parent directory to store the classifier weights.
+        """
         self.X_train = X_train
         self.y_train = y_train
-        self.dataset = dataset
+        self.dataset_directory = dataset_directory
 
         # Load an already trained classifier model if it exists
         # Otherwise, create a new classifier model to train
-        if Path(f"{self.dataset}/saved_classifier_models/rfc_trained.pkl").exists():
+        if Path(
+            f"{self.dataset_directory}/saved_classifier_models/rfc_trained.pkl"
+        ).exists():
             self.best_clf = joblib.load(
-                f"{self.dataset}/saved_classifier_models/rfc_trained.pkl"
+                f"{self.dataset_directory}/saved_classifier_models/rfc_trained.pkl"
             )
         else:
-            Path(f"{self.dataset}/saved_classifier_models").mkdir(
+            Path(f"{self.dataset_directory}/saved_classifier_models").mkdir(
                 exist_ok=True, parents=True
             )
             self.__train()
 
-    def __train(self):
-        def objective(trial):
+    def __train(self) -> None:
+        """
+        __train trains the Random Forest classifier using Optuna for hyperparameter tuning.
+        """
+
+        def objective(trial: optuna.Trial) -> float:
+            """
+            objective trains the Random Forest classifier using Optuna.
+
+            Evaluates classifier performance using the weighted-F1 score.
+
+            Args:
+                trial (optuna.Trial): An Optuna trial instance.
+
+            Returns:
+                float: the mean cross validation weighted f1-score.
+            """
             n_estimators = trial.suggest_int("n_estimators", 50, 150, step=50)
             max_depth = trial.suggest_categorical("max_depth", [20, 30, None])
             min_samples_split = trial.suggest_int("min_samples_split", 2, 10)
@@ -56,7 +83,7 @@ class RFCNetworkAttackClassifier:
             )
 
             # Compute cross-validated F1-score (weighted)
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
             scores = cross_val_score(
                 clf,
                 self.X_train,
@@ -81,8 +108,31 @@ class RFCNetworkAttackClassifier:
         # Save the best model
         joblib.dump(
             self.best_clf,
-            f"{self.dataset}/saved_classifier_models/rfc_trained.pkl",
+            f"{self.dataset_directory}/saved_classifier_models/rfc_trained.pkl",
         )
 
-    def predict_network_attack_class(self, X_test):
+    def predict_network_attack_class(self, X_test: pd.DataFrame) -> np.ndarray:
+        """
+        predict_network_attack_class predicts the attack class on the provided samples.
+
+        Args:
+            X_test (pd.DataFrame): The samples to make predictions on.
+
+        Returns:
+            np.ndarray: The Random Forest classifier predictions.
+        """
         return self.best_clf.predict(X_test)
+
+    def predict_network_attack_class_probabilities(
+        self, X_test: pd.DataFrame
+    ) -> np.ndarray:
+        """
+        predict_network_attack_class_probabilities predicts the attack class probabilities on the provided samples.
+
+        Args:
+            X_test (pd.DataFrame): The samples to make predictions on.
+
+        Returns:
+            np.ndarray: The Random Forest classifier predictions.
+        """
+        return self.best_clf.predict_proba(X_test)
