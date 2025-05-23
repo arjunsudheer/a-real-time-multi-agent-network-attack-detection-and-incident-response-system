@@ -62,20 +62,21 @@ class MLPNetworkAttackClassifier:
         self.dataset_directory = dataset_directory
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.best_clf = self.__build_model().to(self.device)
 
         # Load an already trained classifier model if it exists
         # Otherwise, create a new classifier model to train
         if Path(
             f"{self.dataset_directory}/saved_classifier_models/mlp_trained.pt"
         ).exists():
-            self.clf = self.best_clf.load_state_dict(
+            self.best_clf = self.__build_model().to(self.device)
+            self.best_clf.load_state_dict(
                 torch.load(
                     Path(f"{self.dataset_directory}/saved_classifier_models")
                     / "mlp_trained.pt"
                 )
             )
         else:
+            self.clf = self.__build_model().to(self.device)
             Path(f"{self.dataset_directory}/saved_classifier_models").mkdir(
                 exist_ok=True, parents=True
             )
@@ -110,7 +111,10 @@ class MLPNetworkAttackClassifier:
         Uses CrossEntropyLoss for multi-class data. Uses a patience of 7 for early stopping.
         """
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.best_clf.parameters(), lr=1e-4)
+        optimizer = optim.Adam(self.clf.parameters(), lr=1e-4)
+
+        overall_best_val_loss = float("inf")
+        best_model_weights = None
 
         for train_index, val_index in self.kf.split(self.X_train, self.y_train):
             X_train_fold = torch.tensor(
@@ -139,13 +143,13 @@ class MLPNetworkAttackClassifier:
             patience_counter = 0
 
             for epoch in range(100):
-                self.best_clf.train()
+                self.clf.train()
                 train_loss = 0.0
                 for inputs, labels in train_loader:
                     inputs, labels = inputs.to(self.device), labels.to(self.device)
 
                     optimizer.zero_grad()
-                    outputs = self.best_clf(inputs)
+                    outputs = self.clf(inputs)
                     loss = criterion(outputs, labels)
                     loss.backward()
                     optimizer.step()
@@ -154,12 +158,12 @@ class MLPNetworkAttackClassifier:
                 train_loss /= len(train_loader)
 
                 # Validation phase
-                self.best_clf.eval()
+                self.clf.eval()
                 val_loss = 0.0
                 with torch.no_grad():
                     for inputs, labels in val_loader:
                         inputs, labels = inputs.to(self.device), labels.to(self.device)
-                        outputs = self.best_clf(inputs)
+                        outputs = self.clf(inputs)
                         loss = criterion(outputs, labels)
                         val_loss += loss.item()
 
@@ -173,17 +177,28 @@ class MLPNetworkAttackClassifier:
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     patience_counter = 0
-                    torch.save(
-                        self.best_clf.state_dict(),
-                        Path(f"{self.dataset_directory}/saved_classifier_models")
-                        / "mlp_trained.pt",
-                    )
+
+                    # Save the overall best model across all folds
+                    if val_loss < overall_best_val_loss:
+                        overall_best_val_loss = val_loss
+                        best_model_weights = self.clf.state_dict()
                 else:
                     patience_counter += 1
 
                 if patience_counter >= self.patience:
                     print("Early stopping triggered.")
                     break
+
+        # Save the best MLP classifier weights to a file
+        torch.save(
+            best_model_weights,
+            Path(f"{self.dataset_directory}/saved_classifier_models")
+            / "mlp_trained.pt",
+        )
+
+        # Load the weights for inference
+        self.best_clf = self.__build_model().to(self.device)
+        self.best_clf.load_state_dict(best_model_weights)
 
     def predict_network_attack_class(self, X_test: pd.DataFrame) -> np.ndarray:
         """
@@ -195,12 +210,6 @@ class MLPNetworkAttackClassifier:
         Returns:
             np.ndarray: The MLP classifier predictions.
         """
-        self.best_clf.load_state_dict(
-            torch.load(
-                Path(f"{self.dataset_directory}/saved_classifier_models")
-                / "mlp_trained.pt"
-            )
-        )
         self.best_clf.eval()
         X_test = torch.tensor(X_test.values, dtype=torch.float32).to(self.device)
         test_loader = DataLoader(X_test, batch_size=32)
@@ -226,12 +235,6 @@ class MLPNetworkAttackClassifier:
         Returns:
             np.ndarray: The MLP classifier predictions.
         """
-        self.best_clf.load_state_dict(
-            torch.load(
-                Path(f"{self.dataset_directory}/saved_classifier_models")
-                / "mlp_trained.pt"
-            )
-        )
         self.best_clf.eval()
         X_test = torch.tensor(X_test.values, dtype=torch.float32).to(self.device)
         test_loader = DataLoader(X_test, batch_size=32)

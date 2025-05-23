@@ -49,7 +49,7 @@ class XGBoostNetworkAttackClassifier:
         Uses log loss for multi-class data.
         """
         best_val_score = float("inf")
-        best_fold_model = None
+        self.best_clf = None
 
         for train_index, val_index in self.kf.split(self.X_train, self.y_train):
             X_train, X_val = (
@@ -72,7 +72,7 @@ class XGBoostNetworkAttackClassifier:
             num_rounds = 100
             evallist = [(dtrain, "train"), (dval, "eval")]
 
-            self.best_clf = xgb.train(
+            self.clf = xgb.train(
                 params,
                 dtrain,
                 num_rounds,
@@ -82,15 +82,15 @@ class XGBoostNetworkAttackClassifier:
             )
 
             # Calculate validation score (use the last validation score in the logs)
-            val_score = self.best_clf.best_score
+            val_score = self.clf.best_score
 
             # Save the best model based on validation score
             if val_score < best_val_score:
                 best_val_score = val_score
-                best_fold_model = self.best_clf.copy()
+                self.best_clf = self.clf.copy()
 
         # Save the trained classifier model
-        best_fold_model.save_model(
+        self.best_clf.save_model(
             f"{self.dataset_directory}/saved_classifier_models/xgboost_trained.bin",
         )
 

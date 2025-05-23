@@ -17,6 +17,7 @@ saved_models
 *.jsonl.gz.part.2
 
 agents/reports/*.html
+agents/labeling_agent_long_term_memory
 
 .env
 datasets
