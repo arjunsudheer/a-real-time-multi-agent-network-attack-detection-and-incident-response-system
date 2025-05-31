@@ -33,6 +33,133 @@ Download the classifier pre-trained weights `saved_models.zip` and extract them 
 unzip saved_models.zip
 ```
 
+## SDN Simulation Setup: Ryu + Mininet + LLM-based Threat Detection
+
+This guide documents how to set up a Software-Defined Network (SDN) simulation using **Mininet** and the **Ryu controller**, simulate attack traffic (e.g., SSH brute force), and feed that into a machine learning + LLM pipeline for threat detection and automated mitigation.
+
+---
+
+## Prerequisites
+
+### On macOS (Host)
+
+- Python 3.9 (use `pyenv`)
+- Ryu SDN controller
+
+Install Ryu in Python 3.9 virtualenv:
+
+```bash
+pyenv install 3.9.18
+pyenv virtualenv 3.9.18 ryu39
+pyenv activate ryu39
+
+pip install ryu eventlet==0.30.2
+```
+
+>Ryu does not work with Python 3.12+. Use Python 3.9 for compatibility.
+
+### On Ubuntu VM (Guest)
+
+- Ubuntu running via UTM (or any hypervisor)
+
+- Python 3.x
+
+- Mininet, Open vSwitch
+
+- Tools: hping3, nmap (optional for traffic simulation)
+
+Install:
+
+```bash
+sudo apt update
+sudo apt install -y mininet openvswitch-switch hping3 nmap
+```
+
+### System Architecture (Mininet + RYU)
+[macOS]
+└── Ryu Controller (IP: 192.168.64.1)
+
+[Ubuntu VM]
+└── Mininet with:
+    ├── h1, h2, h3 (virtual hosts)
+    └── s1, s2, s3 (OpenFlow switches)
+
+- Mininet creates a virtual network inside the VM.
+
+- Ryu listens for switch traffic on macOS via REST and OpenFlow.
+
+- The LLM pipeline runs on macOS and consumes classified flow data.
+
+
+## Setup Instructions
+### 1. Start Ryu Controller (on macOS)
+
+In your terminal (inside the ryu39 environment):
+
+
+```bash
+ryu-manager ryu.app.simple_switch_13 ryu.app.ofctl_rest
+
+```
+This starts:
+
+- A basic OpenFlow 1.3 switch controller
+- A REST API on http://localhost:8080
+
+
+### 2. Start Mininet (on Ubuntu VM)
+
+Check Mac's IP from the VM:
+
+```bash
+ip route
+```
+Look for something like 192.168.64.1.
+
+Launch Mininet:
+
+```
+sudo mn --controller=remote,ip=192.168.64.1 --topo=linear,3 --mac
+
+```
+This creates:
+
+- 3 hosts: h1, h2, h3
+
+- 3 switches: s1, s2, s3
+
+- Automatically assigns MAC addresses
+
+### 3.  Test Connectivity
+
+In the Mininet CLI:
+
+>mininet> pingall
+
+Output:
+```
+*** 
+Results: 0% dropped (6/6 received)
+```
+
+This confirms network is working and Ryu is handling switch logic.
+
+
+### 4. Monitor Ryu Controller Logs
+In the Ryu terminal (macOS), you'll see:
+
+```
+packet in 1 00:00:00:00:00:01 00:00:00:00:00:02 2
+```
+Meaning:
+> Switch 1 received a packet from h1 → h2 and asked Ryu what to do with it.
+
+
+Inspect flow entries:
+
+> curl http://localhost:8080/stats/flow/1
+
+
 ## Running the Demo
 
 To run the demo as shown in our video, use the following command:
