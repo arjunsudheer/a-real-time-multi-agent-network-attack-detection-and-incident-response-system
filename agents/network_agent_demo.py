@@ -34,6 +34,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 sys.path.append(str(PROJECT_ROOT))
 
 from classifiers.iot_torch_mlp import MLPClassifier
+from ryu_adapter.flow_collector import get_live_feature_vectors_from_ryu
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
@@ -418,6 +419,19 @@ class IDSAgent:
             final_results.append("\n".join(sample_results))
 
         return "\n\n".join(final_results)
+
+    def get_live_samples_from_ryu(self, num_samples_to_fetch=5, dpid=1) -> pd.DataFrame:
+        """
+        Fetches live flow data from Ryu, converts to feature vectors,
+        and returns a DataFrame ready for analysis (features are raw, unscaled).
+        """
+        # This method now directly calls the function in flow_collector.py
+        # which handles fetching, conversion, and DataFrame creation.
+        print(f"\nCalling ryu_adapter to get live feature vectors for DPID {dpid}...")
+        samples_df = get_live_feature_vectors_from_ryu(
+            num_samples_to_fetch=num_samples_to_fetch, dpid=dpid
+        )
+        return samples_df
 
     def update_memory(self, observation: str, is_short_term: bool = True):
         memory = self.short_term_memory if is_short_term else self.long_term_memory
@@ -1199,14 +1213,35 @@ if __name__ == "__main__":
         print(f"Error in product recommendations test: {str(e)}")
 
     print("\n=== Testing Full Analysis ===")
-    import pandas as pd
+    # Old way of reading data
+    # import pandas as pd
 
-    test_df = pd.read_csv("test.csv")
-    samples = test_df.sample(n=5, random_state=42)
+    # test_df = pd.read_csv("test.csv")
+    # samples = test_df.sample(n=5, random_state=42)
+
+    # print(f"\nAnalyzing {len(samples)} random samples...")
+
+    # report_path = agent.generate_report(samples)
+    # print(f"\nReport generated at: {report_path}")
+
+    # agent.serve_reports()
+
+    # New Way of getting live data from RYU+Mininet
+    print("\nFetching live samples from Ryu for analysis...")
+    samples = agent.get_live_samples_from_ryu(num_samples_to_fetch=5) # Fetch 5 samples
+
+    if not samples.empty:
+        print("\n\n--- Live Samples Data (CSV Format) ---")
+        print(samples.to_csv(index=False))
+        print("--- End of Live Samples Data ---\n\n")
+    else:
+        print("No samples obtained from Ryu to print.")
 
     print(f"\nAnalyzing {len(samples)} random samples...")
-
-    report_path = agent.generate_report(samples)
-    print(f"\nReport generated at: {report_path}")
-
-    agent.serve_reports()
+    if not samples.empty:
+        
+        report_path = agent.generate_report(samples)
+        print(f"\nReport generated at: {report_path}")
+        agent.serve_reports()
+    else:
+        print("No samples obtained from Ryu to analyze.")
