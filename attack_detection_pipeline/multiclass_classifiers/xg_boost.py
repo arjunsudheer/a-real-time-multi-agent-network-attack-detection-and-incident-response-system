@@ -7,7 +7,7 @@ from sklearn.model_selection import StratifiedKFold
 
 class XGBoostNetworkAttackClassifier:
     def __init__(
-        self, X_train: pd.DataFrame, y_train: pd.DataFrame, dataset_directory: Path
+        self, X_train: pd.DataFrame, y_train: np.ndarray, dataset_directory: Path
     ) -> None:
         """
         __init__ initializes train dataset and dataset directory, and calculate the number of unique labels.

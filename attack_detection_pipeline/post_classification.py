@@ -30,14 +30,14 @@ from attack_detection_pipeline.multiclass_classifiers.xg_boost import (
 
 class PostClassification:
     def __init__(
-        self, X_train: pd.DataFrame, y_train: pd.DataFrame, dataset_directory: Path
+        self, X_train: pd.DataFrame, y_train: np.ndarray, dataset_directory: Path
     ):
         """
         __init__ initializes the multiclass classifiers and the dataset directory.
 
         Args:
             X_train (pd.DataFrame): The train dataset samples.
-            y_train (pd.DataFrame): The train dataset labels.
+            y_train (np.ndarray): The train dataset labels.
             dataset_directory (Path): The parent directory to store the classifier weights in.
         """
         self.rfc = RFCNetworkAttackClassifier(X_train, y_train, dataset_directory)
@@ -202,7 +202,7 @@ class PostClassification:
         self,
         preprocessed_malicious_samples: pd.DataFrame,
         original_malicious_samples: pd.DataFrame,
-    ) -> tuple[np.ndarray, pd.DataFrame, np.ndarray, np.ndarray]:
+    ) -> tuple[dict, pd.DataFrame, list]:
         """
         filter_low_agreement_samples identifies any samples that do not have a clear majority class prediction.
 
@@ -211,7 +211,7 @@ class PostClassification:
             original_malicious_samples (pd.DataFrame): The original un-transformed samples to filter for use with the labeling agent later on if needed.
 
         Returns:
-            tuple[np.ndarray, pd.DataFrame, np.ndarray, np.ndarray]: The classifier predictions, low agreement preprocessed samples, low agreement original samples, and the low agreement sample indices.
+            tuple[dict, pd.DataFrame, list]: The classifier predictions, low agreement original samples, and the low agreement sample indices.
         """
         # Post-classification predictions
         predictions, agreement_ratios = self.__get_classifier_predictions(
@@ -225,16 +225,12 @@ class PostClassification:
             if agreement_ratio <= 0.5:
                 low_agreement_sample_indices.append(i)
 
-        low_agreement_preprocessed_samples_df = preprocessed_malicious_samples.iloc[
-            low_agreement_sample_indices
-        ]
         low_agreement_original_samples_df = original_malicious_samples.iloc[
             low_agreement_sample_indices
         ]
 
         return (
             predictions,
-            low_agreement_preprocessed_samples_df,
             low_agreement_original_samples_df,
             low_agreement_sample_indices,
         )
