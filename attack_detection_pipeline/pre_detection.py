@@ -31,8 +31,7 @@ class PreDetection:
             dataset_directory (Path): The parent directory to store the classifier weights.
         """
         self.X_train = X_train
-        # Convert to binary labels
-        self.y_train = np.where(y_train == "Benign", 0, 1)
+        self.y_train = y_train
         self.dataset_directory = dataset_directory
 
         # Load an already trained classifier model if it exists
@@ -150,8 +149,6 @@ class PreDetection:
             unique_labels (np.ndarray): A list of the unique labels that exist in the test dataset. Used for creating the Confusion Matrix Display.
         """
         y_pred = self.__get_classifier_predictions(X_test)
-        # Convert to binary labels
-        y_test = np.where(y_test == "Benign", 0, 1)
 
         # Create the directory for saving metrics, if it doesn't exist
         metrics_save_directory = Path(f"{self.dataset_directory}/classifier_metrics")
@@ -192,7 +189,7 @@ class PreDetection:
         self,
         preprocessed_samples: pd.DataFrame,
         original_samples: pd.DataFrame,
-    ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    ) -> tuple[pd.DataFrame, pd.DataFrame, list]:
         """
         filter_low_agreement_samples identifies any samples that have a positive (malicious) prediction.
 
@@ -201,7 +198,7 @@ class PreDetection:
             original_malicious_samples (pd.DataFrame): The original un-transformed samples to filter for use with the post-detection stage later on if needed.
 
         Returns:
-            tuple[pd.DataFrame, np.ndarray, np.ndarray]: The predicted malicious preprocessed samples, original malicious samples, and the malicious sample indices.
+            tuple[pd.DataFrame, pd.DataFrame, list]: The predicted malicious preprocessed samples, original malicious samples, and the malicious sample indices.
         """
         # Pre-detection predictions
         predictions = self.__get_classifier_predictions(preprocessed_samples)
