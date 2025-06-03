@@ -1,5 +1,6 @@
 import sys
 import numpy as np
+import logging # Added for logging
 import pandas as pd
 import joblib
 from pathlib import Path
@@ -17,6 +18,7 @@ from preprocessing.data_transformation import (
     transform_and_scale_features,
     transform_data,
 )
+from ryu_adapter.flow_collector import get_live_feature_vectors_from_ryu # Added for Ryu integration
 
 
 class NetworkAgentSystem:
@@ -248,28 +250,48 @@ class NetworkAgentSystem:
     def __train_recommendation_agent(self):
         pass
 
-    def preprocess_inference_network_sample(self, network_traffic_sample: pd.DataFrame):
+    def preprocess_inference_network_sample(self, network_traffic_sample: pd.DataFrame) -> pd.DataFrame:
         # Clean and transform sample
+        # Use .copy() to avoid modifying the original DataFrame passed to this function
+        processed_sample = network_traffic_sample.copy()
         # Remove non-numeric characters from numeric columns
-        network_traffic_sample = clean_numeric_columns(network_traffic_sample)
+        processed_sample = clean_numeric_columns(processed_sample)
         # Use the FeatureHasher and StandardScaler to transform the sample
-        network_traffic_sample = transform_and_scale_features(
-            network_traffic_sample,
+        processed_sample = transform_and_scale_features(
+            processed_sample,
             parent_directory=self.parent_directory,
         )
+        return processed_sample
 
-    def inference_attack_detection_pipeline(self) -> str:
+    def inference_attack_detection_pipeline(
+        self,
+        current_preprocessed_samples: pd.DataFrame,
+        current_original_samples: pd.DataFrame
+    ) -> str:
+        """
+        Runs the attack detection pipeline on the given live samples.
+
+        Args:
+            current_preprocessed_samples (pd.DataFrame): The live samples after preprocessing (hashing/scaling).
+            current_original_samples (pd.DataFrame): The live samples in their original feature format (before hashing/scaling).
+        Returns:
+            str: The predicted attack type or "Benign".
+        """
         # Pre-detection malicious sample filtering
         (
             malicious_preprocessed_samples_df,
             malicious_original_samples_df,
             malicious_indices,
         ) = self.pre_detection.filter_malicious_samples(
-            preprocessed_samples=self.X_test_pre_detection,
-            original_samples=self.X_test_original,
+            preprocessed_samples=current_preprocessed_samples,
+            original_samples=current_original_samples,
         )
         # If there are no malicious indices, then the sample was benign
         if len(malicious_indices) == 0:
+            if not malicious_preprocessed_samples_df.empty: # if samples were processed but all benign
+                logging.info("Pre-detection classified all live samples as Benign.")
+            else: # if no samples were passed to filter_malicious_samples (e.g. current_preprocessed_samples was empty)
+                logging.warning("No samples available for pre-detection or all were filtered out before pre-detection.")
             return "Benign"
 
         # Post-classification low agreement sample filtering
@@ -283,6 +305,7 @@ class NetworkAgentSystem:
         )
         # If there are no low agreement indices, then an attack class was determined
         if len(low_agreement_indices) == 0:
+            logging.info(f"Post-classification determined attack type: {predictions[0]}")
             return predictions[0]
 
         # Prompt labeling agent to resolve the final class prediction for the low_agreement sample
@@ -294,6 +317,7 @@ class NetworkAgentSystem:
             sample=low_agreement_original_samples_df.iloc[0]
         )
         prediction = response["output"]
+        logging.info(f"Labeling agent determined attack type: {prediction}")
         return prediction
 
     def inference_response_system(self):
@@ -304,8 +328,41 @@ class NetworkAgentSystem:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info("Initializing Network Agent System...")
     nas = NetworkAgentSystem()
 
-    # To-Do: Add mininet code here to generate synthetic network data
+    logging.info("Fetching live samples from Ryu adapter...")
+    # Fetch, for example, 5 samples from DPID 1
+    live_samples_df = get_live_feature_vectors_from_ryu(num_samples_to_fetch=5, dpid=1)
 
-    # To-Do: Convert data to csv format for classifiers, should be a Pandas DataFrame
+    if live_samples_df.empty:
+        logging.warning("No live samples received from Ryu adapter. Exiting.")
+    else:
+        logging.info(f"Received {len(live_samples_df)} live samples from Ryu.")
+        logging.debug("Live samples data:\n%s", live_samples_df.to_string())
+
+        # The 'Label' column in live_samples_df is a dummy for raw data.
+        # We need the original features for the LabelingAgent if it's invoked.
+        # The preprocessing step should operate on the features without this dummy label.
+        original_features_for_inference = live_samples_df.drop(columns=['Label'], errors='ignore')
+
+        logging.info("Preprocessing live samples...")
+        try:
+            preprocessed_live_samples_df = nas.preprocess_inference_network_sample(
+                original_features_for_inference.copy() # Use .copy() to be safe
+            )
+            logging.info("Live samples preprocessed successfully.")
+            logging.debug("Preprocessed live samples data shape: %s", preprocessed_live_samples_df.shape)
+
+            logging.info("Running inference attack detection pipeline on live samples...")
+            prediction = nas.inference_attack_detection_pipeline(
+                current_preprocessed_samples=preprocessed_live_samples_df,
+                current_original_samples=original_features_for_inference
+            )
+            logging.info(f"Final prediction for live traffic: {prediction}")
+
+        except Exception as e:
+            logging.error(f"An error occurred during live sample processing or inference: {e}", exc_info=True)
+
+    logging.info("Network Agent System processing finished.")
