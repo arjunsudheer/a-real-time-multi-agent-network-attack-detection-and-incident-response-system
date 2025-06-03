@@ -1,9 +1,10 @@
-import sys
 import numpy as np
-import logging # Added for logging
+import logging
 import pandas as pd
 import joblib
 from pathlib import Path
+
+from sklearn.naive_bayes import LabelBinarizer
 
 from agents.feature_selection_agent import FeatureSelectionAgent
 from agents.labeling_agent import LabelingAgent
@@ -15,38 +16,55 @@ from preprocessing.data_cleaning import (
 from attack_detection_pipeline.pre_detection import PreDetection
 from attack_detection_pipeline.post_classification import PostClassification
 from preprocessing.data_transformation import (
+    load_label_binarizer,
+    match_column_format,
     transform_and_scale_features,
     transform_data,
 )
-from ryu_adapter.flow_collector import get_live_feature_vectors_from_ryu # Added for Ryu integration
+from ryu_adapter.flow_collector import get_live_feature_vectors_from_ryu
+from report_generation.page_generation import ReportPageGeneration
 
 
 class NetworkAgentSystem:
-    def __init__(self):
-        self.parent_directory = Path("datasets/aci_iot_network_dataset_2023")
+    def __init__(self, parent_directory: Path):
+        self.parent_directory = parent_directory
         self.label_column = "Label"
 
         self.preprocessed_datasets_directory = (
             self.parent_directory / "preprocessed_datasets"
         )
         # Load the preprocessed datasets if they exist
-        # Assume training process has completed if the preprocessed datasets exist
         if self.preprocessed_datasets_directory.exists():
-            self.__load_dataset()
+            self.__load_preprocessed_dataset()
         else:  # Otherwise create the preprocessed dataset
             self.__preprocess_training_dataset()
-            # Complete the training process for all other components
-            self.__train_attack_detection_pipeline()
-            self.__train_response_system()
-            self.__train_recommendation_agent()
 
-    def __load_dataset(self):
+        # Train or load pre-detection binary classifier
+        self.pre_detection = PreDetection(
+            self.X_train_pre_detection,
+            self.y_train_pre_detection,
+            dataset_directory=self.parent_directory,
+        )
+        # Train or load post-detection multi-class classifiers
+        self.post_classification = PostClassification(
+            self.X_train_post_classification,
+            self.y_train_post_classification,
+            dataset_directory=self.parent_directory,
+        )
+
+        # Complete the training process for the attack detection pipeline
+        # if there is no labeling agent long-term memory built
+        if not Path("agents/labeling_agent_long_term_memory").exists():
+            self.__train_attack_detection_pipeline()
+
+    def __load_preprocessed_dataset(self):
         def load_dataset(name: str, as_numpy: bool = False):
             path = self.preprocessed_datasets_directory / f"{name}.csv"
-            df = pd.read_csv(path, header=None)
+            df = pd.read_csv(path)
             return df.to_numpy().ravel() if as_numpy else df
 
         # Load the original datasets
+        self.X_train_original = load_dataset("X_train_original")
         self.y_train_original = load_dataset("y_train_original", as_numpy=True)
         self.X_test_original = load_dataset("X_test_original")
         self.y_test_original = load_dataset("y_test_original", as_numpy=True)
@@ -73,9 +91,9 @@ class NetworkAgentSystem:
         def save_dataset(data: pd.DataFrame | np.ndarray, name: str):
             path = self.preprocessed_datasets_directory / f"{name}.csv"
             if isinstance(data, np.ndarray):
-                pd.Series(data).to_csv(path, index=True)
+                pd.Series(data).to_csv(path, index=False)
             else:
-                data.to_csv(path, index=True)
+                data.to_csv(path, index=False)
 
         # ACI IOT Dataset 2023
         df = pd.read_csv(self.parent_directory / "original_dataset/ACI-IoT-2023.csv")
@@ -135,7 +153,7 @@ class NetworkAgentSystem:
         # Split dataset into train and test
         # Use the FeatureHasher, StandardScaler, and LabelBinarizer to transform the datasets
         (
-            _,  # X_train original
+            self.X_train_original,
             self.y_train_original,
             self.X_test_original,
             self.y_test_original,
@@ -155,6 +173,7 @@ class NetworkAgentSystem:
 
         self.preprocessed_datasets_directory.mkdir()
         # Save the original datasets
+        save_dataset(self.X_train_original, "X_train_original")
         save_dataset(self.y_train_original, "y_train_original")
         save_dataset(self.X_test_original, "X_test_original")
         save_dataset(self.y_test_original, "y_test_original")
@@ -184,12 +203,6 @@ class NetworkAgentSystem:
         )
 
     def __train_attack_detection_pipeline(self):
-        # Train pre-detection binary classifier
-        self.pre_detection = PreDetection(
-            self.X_train_pre_detection,
-            self.y_train_pre_detection,
-            dataset_directory=self.parent_directory,
-        )
         # Pre-detection evaluation
         self.pre_detection.save_classification_metrics(
             self.X_train_pre_detection, self.y_train_pre_detection
@@ -209,12 +222,6 @@ class NetworkAgentSystem:
         positions = self.X_test_original.index.get_indexer(malicious_indices)
         filtered_original_labels = self.y_test_original[positions]
 
-        # Train post-detection multi-class classifiers
-        self.post_classification = PostClassification(
-            self.X_train_post_classification,
-            self.y_train_post_classification,
-            dataset_directory=self.parent_directory,
-        )
         # Post-classification evaluation
         self.post_classification.save_classification_metrics(
             self.X_test_post_classification,
@@ -225,7 +232,7 @@ class NetworkAgentSystem:
         )
         # Post-classification low agreement sample filtering
         (
-            predictions,
+            _,  # Predictions
             low_agreement_original_samples_df,
             low_agreement_indices,
         ) = self.post_classification.filter_low_agreement_samples(
@@ -244,69 +251,54 @@ class NetworkAgentSystem:
             samples=low_agreement_original_samples_df, labels=filtered_original_labels
         )
 
-    def __train_response_system(self):
-        pass
-
-    def __train_recommendation_agent(self):
-        pass
-
-    def preprocess_inference_network_sample(self, network_traffic_sample: pd.DataFrame) -> pd.DataFrame:
+    def preprocess_inference_network_sample(
+        self, network_traffic_sample: pd.DataFrame
+    ) -> pd.DataFrame:
         # Clean and transform sample
-        # Use .copy() to avoid modifying the original DataFrame passed to this function
-        processed_sample = network_traffic_sample.copy()
+        # Match expected column format
+        preprocessed_sample = match_column_format(
+            network_traffic_sample, reference_df=self.X_train_original
+        )
         # Remove non-numeric characters from numeric columns
-        processed_sample = clean_numeric_columns(processed_sample)
+        preprocessed_sample = clean_numeric_columns(preprocessed_sample)
         # Use the FeatureHasher and StandardScaler to transform the sample
-        processed_sample = transform_and_scale_features(
-            processed_sample,
+        preprocessed_sample = transform_and_scale_features(
+            preprocessed_sample,
             parent_directory=self.parent_directory,
         )
-        return processed_sample
+        return preprocessed_sample
 
     def inference_attack_detection_pipeline(
         self,
-        current_preprocessed_samples: pd.DataFrame,
-        current_original_samples: pd.DataFrame
+        preprocessed_sample: pd.DataFrame,
+        original_sample: pd.DataFrame,
+        lb: LabelBinarizer,
     ) -> str:
-        """
-        Runs the attack detection pipeline on the given live samples.
-
-        Args:
-            current_preprocessed_samples (pd.DataFrame): The live samples after preprocessing (hashing/scaling).
-            current_original_samples (pd.DataFrame): The live samples in their original feature format (before hashing/scaling).
-        Returns:
-            str: The predicted attack type or "Benign".
-        """
         # Pre-detection malicious sample filtering
         (
-            malicious_preprocessed_samples_df,
-            malicious_original_samples_df,
-            malicious_indices,
+            malicious_preprocessed_sample_df,
+            malicious_original_sample_df,
+            malicious_index,
         ) = self.pre_detection.filter_malicious_samples(
-            preprocessed_samples=current_preprocessed_samples,
-            original_samples=current_original_samples,
+            preprocessed_samples=preprocessed_sample,
+            original_samples=original_sample,
         )
         # If there are no malicious indices, then the sample was benign
-        if len(malicious_indices) == 0:
-            if not malicious_preprocessed_samples_df.empty: # if samples were processed but all benign
-                logging.info("Pre-detection classified all live samples as Benign.")
-            else: # if no samples were passed to filter_malicious_samples (e.g. current_preprocessed_samples was empty)
-                logging.warning("No samples available for pre-detection or all were filtered out before pre-detection.")
+        if len(malicious_index) == 0:
             return "Benign"
 
         # Post-classification low agreement sample filtering
         (
             predictions,
             low_agreement_original_samples_df,
-            low_agreement_indices,
+            low_agreement_index,
         ) = self.post_classification.filter_low_agreement_samples(
-            preprocessed_malicious_samples=malicious_preprocessed_samples_df,
-            original_malicious_samples=malicious_original_samples_df,
+            preprocessed_malicious_samples=malicious_preprocessed_sample_df,
+            original_malicious_samples=malicious_original_sample_df,
         )
         # If there are no low agreement indices, then an attack class was determined
-        if len(low_agreement_indices) == 0:
-            logging.info(f"Post-classification determined attack type: {predictions[0]}")
-            return predictions[0]
+        if len(low_agreement_index) == 0:
+            return lb.inverse_transform(predictions[0])
 
         # Prompt labeling agent to resolve the final class prediction for the low_agreement sample
         la = LabelingAgent(
@@ -320,21 +312,21 @@ class NetworkAgentSystem:
         logging.info(f"Labeling agent determined attack type: {prediction}")
         return prediction
 
-    def inference_response_system(self):
-        pass
-
-    def inference_recommendation_agent(self):
-        pass
-
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
     logging.info("Initializing Network Agent System...")
-    nas = NetworkAgentSystem()
+
+    parent_directory = Path("datasets/aci_iot_network_dataset_2023")
+    nas = NetworkAgentSystem(parent_directory=parent_directory)
 
     logging.info("Fetching live samples from Ryu adapter...")
-    # Fetch, for example, 5 samples from DPID 1
-    live_samples_df = get_live_feature_vectors_from_ryu(num_samples_to_fetch=5, dpid=1)
+    # Get live samples from ryu for analysis
+    live_samples_df = get_live_feature_vectors_from_ryu(
+        num_samples_to_fetch=5, dpid=1
+    )  # Fetch 5 samples
 
     if live_samples_df.empty:
         logging.warning("No live samples received from Ryu adapter. Exiting.")
@@ -345,24 +337,47 @@ if __name__ == "__main__":
         # The 'Label' column in live_samples_df is a dummy for raw data.
         # We need the original features for the LabelingAgent if it's invoked.
         # The preprocessing step should operate on the features without this dummy label.
-        original_features_for_inference = live_samples_df.drop(columns=['Label'], errors='ignore')
+        original_features_for_inference = live_samples_df.drop(
+            columns=["Label"], errors="ignore"
+        )
 
         logging.info("Preprocessing live samples...")
-        try:
-            preprocessed_live_samples_df = nas.preprocess_inference_network_sample(
-                original_features_for_inference.copy() # Use .copy() to be safe
-            )
-            logging.info("Live samples preprocessed successfully.")
-            logging.debug("Preprocessed live samples data shape: %s", preprocessed_live_samples_df.shape)
 
-            logging.info("Running inference attack detection pipeline on live samples...")
-            prediction = nas.inference_attack_detection_pipeline(
-                current_preprocessed_samples=preprocessed_live_samples_df,
-                current_original_samples=original_features_for_inference
-            )
-            logging.info(f"Final prediction for live traffic: {prediction}")
+        try:
+            # Process each sample in real time
+            for i in range(len(original_features_for_inference)):
+                live_sample = pd.DataFrame([original_features_for_inference.iloc[i]])
+
+                # Preprocess before feeding to attack detection pipeline
+                preprocessed_live_sample = nas.preprocess_inference_network_sample(
+                    live_sample
+                )
+                logging.info("Live samples preprocessed successfully.")
+
+                # Feed samples through attack detection pipeline
+                logging.info(
+                    "Running inference attack detection pipeline on live samples..."
+                )
+                prediction = nas.inference_attack_detection_pipeline(
+                    preprocessed_sample=preprocessed_live_sample,
+                    original_sample=live_sample,
+                    lb=load_label_binarizer(parent_directory=parent_directory),
+                )
+                logging.info(f"Final prediction for live traffic: {prediction}")
+
+                # Ignore Benign traffic
+                if prediction == "Benign":
+                    continue
+
+                # Generate reports
+                rpg = ReportPageGeneration()
+                rpg.generate_report(live_sample, classifier_prediction=prediction)
+                rpg.serve_reports()
 
         except Exception as e:
-            logging.error(f"An error occurred during live sample processing or inference: {e}", exc_info=True)
+            logging.error(
+                f"An error occurred during live sample processing or inference: {e}",
+                exc_info=True,
+            )
 
     logging.info("Network Agent System processing finished.")

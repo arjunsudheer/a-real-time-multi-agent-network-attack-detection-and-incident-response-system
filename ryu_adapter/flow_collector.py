@@ -2,10 +2,14 @@
 import requests
 import logging
 import pandas as pd
-from flow_to_feature_dict import ryu_flow_to_feature_dict, ORDERED_FEATURE_NAMES
+from ryu_adapter.flow_to_feature_dict import (
+    ryu_flow_to_feature_dict,
+    ORDERED_FEATURE_NAMES,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def get_flow_stats(dpid=1):
     url = f"http://localhost:8080/stats/flow/{dpid}"
@@ -18,10 +22,11 @@ def get_flow_stats(dpid=1):
         logger.error(f"Error fetching flow stats: {e}")
         return []
 
+
 def get_live_feature_vectors_from_ryu(num_samples_to_fetch=20, dpid=1) -> pd.DataFrame:
     logger.info(f"Fetching flow stats from Ryu for DPID {dpid}...")
     ryu_flows = get_flow_stats(dpid)
-    ryu_flows = sorted(ryu_flows, key=lambda x: x.get('packet_count', 0), reverse=True)
+    ryu_flows = sorted(ryu_flows, key=lambda x: x.get("packet_count", 0), reverse=True)
 
     logger.info(f"Fetched {len(ryu_flows)} flows.")
     feature_vectors = []
@@ -45,14 +50,15 @@ def get_live_feature_vectors_from_ryu(num_samples_to_fetch=20, dpid=1) -> pd.Dat
 
     if not feature_vectors:
         logger.warning("No valid flow entries with usable features.")
-        return pd.DataFrame(columns=ORDERED_FEATURE_NAMES + ['Label'])
+        return pd.DataFrame(columns=ORDERED_FEATURE_NAMES + ["Label"])
 
     df = pd.DataFrame(feature_vectors, columns=ORDERED_FEATURE_NAMES)
-    df['Label'] = 0  # Placeholder
+    df["Label"] = 0  # Placeholder
     logger.info(f"✅ Extracted {valid_flows} valid feature rows.")
     return df
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     df = get_live_feature_vectors_from_ryu()
     if not df.empty:
         print("Feature DataFrame from Ryu:\n")
