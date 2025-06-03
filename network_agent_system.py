@@ -1,4 +1,5 @@
 import numpy as np
+import logging  # Added for logging
 import pandas as pd
 import joblib
 from pathlib import Path
@@ -250,11 +251,13 @@ class NetworkAgentSystem:
         self, network_traffic_sample: pd.DataFrame
     ) -> pd.DataFrame:
         # Clean and transform sample
+        # Use .copy() to avoid modifying the original DataFrame passed to this function
+        processed_sample = network_traffic_sample.copy()
         # Remove non-numeric characters from numeric columns
-        network_traffic_sample = clean_numeric_columns(network_traffic_sample)
+        processed_sample = clean_numeric_columns(processed_sample)
         # Use the FeatureHasher and StandardScaler to transform the sample
-        network_traffic_sample = transform_and_scale_features(
-            network_traffic_sample,
+        processed_sample = transform_and_scale_features(
+            processed_sample,
             parent_directory=self.parent_directory,
         )
         return network_traffic_sample
@@ -300,46 +303,73 @@ class NetworkAgentSystem:
             sample=low_agreement_original_samples_df.iloc[0]
         )
         prediction = response["output"]
+        logging.info(f"Labeling agent determined attack type: {prediction}")
         return prediction
 
 
 if __name__ == "__main__":
-    # Loads the network data and classifiers
-    # Trains classifiers if necessary
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+    logging.info("Initializing Network Agent System...")
+
     nas = NetworkAgentSystem()
 
+    logging.info("Fetching live samples from Ryu adapter...")
     # Get live samples from ryu for analysis
-    print("\nFetching live samples from Ryu for analysis...")
-    samples = get_live_feature_vectors_from_ryu(
+    live_samples_df = get_live_feature_vectors_from_ryu(
         num_samples_to_fetch=5, dpid=1
     )  # Fetch 5 samples
 
-    if not samples.empty:
-        print("\n\n--- Live Samples Data (CSV Format) ---")
-        print(samples.to_csv(index=False))
-        print("--- End of Live Samples Data ---\n\n")
-        print(f"\nAnalyzing {len(samples)} random samples...")
+    if live_samples_df.empty:
+        logging.warning("No live samples received from Ryu adapter. Exiting.")
     else:
-        print("No samples obtained from Ryu to print.")
-        print("\nNo samples obtained from Ryu to analyze.")
+        logging.info(f"Received {len(live_samples_df)} live samples from Ryu.")
+        logging.debug("Live samples data:\n%s", live_samples_df.to_string())
 
-    # Process each sample in real time
-    for i in range(len(samples)):
-        sample = pd.DataFrame(samples.iloc[i])
-        print(sample)
-
-        # Preprocess before feeding to attack detection pipeline
-        preprocessed_sample = nas.preprocess_inference_network_sample(sample)
-        print(preprocessed_sample)
-
-        # Feed samples through attack detection pipeline
-        prediction = nas.inference_attack_detection_pipeline(
-            preprocessed_sample=preprocessed_sample,
-            original_sample=sample,
-            lb=load_label_binarizer(),
+        original_features_for_inference = live_samples_df.drop(
+            columns=["Label"], errors="ignore"
         )
 
-        # Generate reports
-        rpg = ReportPageGeneration()
-        rpg.generate_report(sample)
-        rpg.serve_reports()
+        logging.info("Preprocessing live samples...")
+
+        try:
+            # Process each sample in real time
+            for i in range(len(live_samples_df)):
+                live_sample = pd.DataFrame(live_samples_df.iloc[i])
+                print(live_sample)
+
+                # Preprocess before feeding to attack detection pipeline
+                preprocessed_live_sample = nas.preprocess_inference_network_sample(
+                    live_sample
+                )
+                print(preprocessed_live_sample)
+                logging.info("Live samples preprocessed successfully.")
+                logging.debug(
+                    "Preprocessed live samples data shape: %s",
+                    preprocessed_live_sample.shape,
+                )
+
+                # Feed samples through attack detection pipeline
+                logging.info(
+                    "Running inference attack detection pipeline on live samples..."
+                )
+                prediction = nas.inference_attack_detection_pipeline(
+                    preprocessed_sample=preprocessed_live_sample,
+                    original_sample=live_sample,
+                    lb=load_label_binarizer(),
+                )
+                logging.info(f"Final prediction for live traffic: {prediction}")
+
+                # Generate reports
+                rpg = ReportPageGeneration()
+                rpg.generate_report(live_sample)
+                rpg.serve_reports()
+
+        except Exception as e:
+            logging.error(
+                f"An error occurred during live sample processing or inference: {e}",
+                exc_info=True,
+            )
+
+    logging.info("Network Agent System processing finished.")
