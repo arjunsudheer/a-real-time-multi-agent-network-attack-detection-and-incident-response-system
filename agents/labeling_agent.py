@@ -9,11 +9,8 @@ import time
 import numpy as np
 import pandas as pd
 
-from agents.knowledge_source import (
-    KnowledgeSource,
-    safe_web_search_tool,
-    safe_arxiv_retrieve_tool,
-)
+from agents.knowledge_source import KnowledgeSource
+from agents.llm_tools import safe_web_search_tool, safe_arxiv_retrieve_tool
 
 
 class LabelingAgent:
