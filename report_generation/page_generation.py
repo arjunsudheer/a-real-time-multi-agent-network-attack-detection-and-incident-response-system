@@ -11,11 +11,8 @@ from pydantic import BaseModel, Field
 from typing import List
 
 from agents.recommendation_agent import RecommendationAgent
-from preprocessing.data_transformation import load_label_binarizer
 
-from agents.llm_tools import (
-    safe_arxiv_retrieve_tool,
-)
+from agents.llm_tools import safe_arxiv_retrieve_tool, safe_cve_search_tool
 
 from report_generation.parse_results import (
     parse_arxiv_results,
@@ -113,39 +110,21 @@ class ReportPageGeneration:
 
             sample_info = {
                 "id": i,
-                "source_port": int(sample[1]["Src Port"]),
-                "source_ip": int(sample[1]["Src IP"]),
-                "dest_port": int(sample[1]["Dst Port"]),
-                "dest_ip": int(sample[1]["Dst IP"]),
+                "dest_ip": sample[1]["Dst IP"],
                 "protocol": int(sample[1]["Protocol"]),
-                "detail_url": f"sample_{i}.html",
-                "traffic_type": load_label_binarizer().inverse_transform(
-                    [int(sample[1]["Label"])]
-                )[0],
-                "flow_duration": f"{sample[1]['Flow Duration']:.2f}",
-                "total_fwd_packets": int(sample[1]["Total Fwd Packet"]),
-                "fwd_packet_length_mean": f"{sample[1]['Fwd Packet Length Mean']:.2f}",
-                "total_bwd_packets": int(sample[1]["Total Bwd packets"]),
-                "bwd_packet_length_mean": f"{sample[1]['Bwd Packet Length Mean']:.2f}",
-                "total_length_fwd_packets": f"{sample[1]['Total Length of Fwd Packet']:.0f}",
-                "total_length_bwd_packets": f"{sample[1]['Total Length of Bwd Packet']:.0f}",
-                "flow_packets_s": f"{sample[1]['Flow Packets/s']:.2f}",
                 "flow_bytes_s": f"{sample[1]['Flow Bytes/s']:.2f}",
-                "fwd_packets_s": f"{sample[1]['Fwd Packets/s']:.2f}",
-                "bwd_packets_s": f"{sample[1]['Bwd Packets/s']:.2f}",
-                "fin_flag_count": int(sample[1]["FIN Flag Count"]),
-                "syn_flag_count": int(sample[1]["SYN Flag Count"]),
-                "rst_flag_count": int(sample[1]["RST Flag Count"]),
-                "psh_flag_count": int(sample[1]["PSH Flag Count"]),
-                "ack_flag_count": int(sample[1]["ACK Flag Count"]),
-                "urg_flag_count": int(sample[1]["URG Flag Count"]),
-                "active_mean": f"{sample[1]['Active Mean']:.2f}",
-                "idle_mean": f"{sample[1]['Idle Mean']:.2f}",
+                "source_ip": sample[1]["Src IP"],
+                "dest_port": int(sample[1]["Dst Port"]),
+                "flow_duration": f"{sample[1]['Flow Duration']:.2f}",
+                "flow_packets_s": f"{sample[1]['Flow Packets/s']:.2f}",
+                "source_port": int(sample[1]["Src Port"]),
+                "detail_url": f"sample_{i}.html",
             }
 
             sample_info.update(parse_classifier_results(classifier_prediction))
 
-            traffic_type = sample_info["traffic_type"]
+            # traffic_type = sample_info["traffic_type"] -- During inference, there is no "Label" column
+            traffic_type = classifier_prediction
             try:
                 if traffic_type.lower() == "icmp flood":
                     query = 'cat:cs.CR AND (ti:"DDoS" OR ti:"denial of service" OR abs:"ICMP flood")'
@@ -158,17 +137,13 @@ class ReportPageGeneration:
 
                 print(f"\nSearching ArXiv with query: {query}")
                 try:
-                    arxiv_results = safe_arxiv_retrieve_tool.get_relevant_documents(
-                        query
-                    )
+                    arxiv_results = safe_arxiv_retrieve_tool(query)
                     print(f"Found {len(arxiv_results)} papers")
 
                     if not arxiv_results:
                         fallback_query = 'cat:cs.CR AND (ti:"network security" OR ti:"intrusion detection")'
                         print(f"\nNo results, trying fallback query: {fallback_query}")
-                        arxiv_results = safe_arxiv_retrieve_tool.get_relevant_documents(
-                            fallback_query
-                        )
+                        arxiv_results = safe_arxiv_retrieve_tool(fallback_query)
                         print(f"Found {len(arxiv_results)} papers with fallback query")
                 except Exception as e:
                     print(f"Error in ArXiv search: {str(e)}")
@@ -183,7 +158,7 @@ class ReportPageGeneration:
                 print(f"Error retrieving research papers: {str(e)}")
                 sample_info["arxiv_articles"] = []
 
-            cve_results = self.search_cve(traffic_type)
+            cve_results = safe_cve_search_tool(traffic_type)
             sample_info["cves"] = parse_cve_results(cve_results)
 
             try:
