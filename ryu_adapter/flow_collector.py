@@ -2,7 +2,10 @@
 import requests
 import logging
 import pandas as pd
-from flow_to_feature_dict import ryu_flow_to_feature_dict, ORDERED_FEATURE_NAMES
+from ryu_adapter.flow_to_feature_dict import (
+    ryu_flow_to_feature_dict,
+    ORDERED_FEATURE_NAMES,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
