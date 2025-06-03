@@ -35,7 +35,7 @@ unzip saved_models.zip
 
 ## SDN Simulation Setup: Ryu + Mininet + LLM-based Threat Detection
 
-This guide documents how to set up a Software-Defined Network (SDN) simulation using **Mininet** and the **Ryu controller**, simulate attack traffic (e.g., SSH brute force), and feed that into a machine learning + LLM pipeline for threat detection and automated mitigation.
+This section documents how to set up a Software-Defined Network (SDN) simulation using **Mininet** and the **Ryu controller**, simulate attack traffic (e.g., SSH brute force), and feed that into a machine learning + LLM pipeline for threat detection and automated mitigation.
 
 ---
 
