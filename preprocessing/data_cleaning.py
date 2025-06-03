@@ -1,18 +1,19 @@
-from pathlib import Path
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.feature_extraction import FeatureHasher
-from sklearn.preprocessing import LabelBinarizer
-import joblib
-
-from agents.feature_selection_agent import FeatureSelectionAgent
 
 
 # Some entries have a leading single quote that makes pandas treat it as a string instead a float
 # Remove the leading single quotation for the numerical columns
-def clean_numeric_columns(df: pd.DataFrame) -> None:
+def clean_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    clean_numeric_columns removes any non-numerical characters from a numerical column.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to clean the numeric columns on.
+
+    Returns:
+        pd.DataFrame: The DataFrame with the cleaned numeric columns.
+    """
     numeric_columns = df.select_dtypes(include=["number"]).columns
 
     # Work on a copy of the dataframe
@@ -29,168 +30,69 @@ def clean_numeric_columns(df: pd.DataFrame) -> None:
     return df
 
 
-def transform_and_scale_features(
-    X: pd.DataFrame, parent_directory: Path, fit_scaler: bool = False
+def clean_data(
+    df: pd.DataFrame, label_column: str, min_frequency_threshold: int = 10
 ) -> pd.DataFrame:
-    # Use FeatureHasher instead of OneHotEncoder due to memory issues
-    fh = FeatureHasher(n_features=1024, input_type="string")
+    """
+    clean_data removes infrequent labels, and samples with incomplete or useless data.
 
-    categorical_columns = X.select_dtypes(include=["object", "category"]).columns
+    Removes duplicate samples and samples that contain NaN or infinity values. Remove features
+    that have a constant value for all samples. Remove infrequent classes that will raise errors
+    with Stratified KFold Cross Validation.
 
-    # FeatureHash categorical columns
-    X_categorical = fh.transform(X[categorical_columns].astype(str).values)
-    # Convert to dense array
-    X_categorical = X_categorical.toarray()
-    X_numerical = X.drop(columns=categorical_columns, errors="ignore")
+    Args:
+        df (pd.DataFrame): The DataFrame to be cleaned.
+        label_column (str): The name of the label column to check for infrequent classes.
+        min_frequency_threshold (int, optional): The minimum number of occurrences for each sample to have.
+        Samples with fewer occurrences than min_frequency_threshold will be dropped. Defaults to 10.
 
-    # Scale numerical features
-    if fit_scaler:
-        scaler = StandardScaler()
-        X_numerical = scaler.fit_transform(X_numerical)
-        joblib.dump(scaler, parent_directory / "standard_scaler.pkl")
-    else:
-        scaler = joblib.load(parent_directory / "standard_scaler.pkl")
-        X_numerical = scaler.transform(X_numerical)
+    Returns:
+        pd.DataFrame: The cleaned DataFrame.
+    """
+    # Remove NaN, infinity, and duplicate values
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df.dropna(inplace=True)
+    df.drop_duplicates(inplace=True)
 
-    # Reconstruct DataFrame
-    X_processed = np.hstack([X_numerical, X_categorical])
-    X_df = pd.DataFrame(X_processed, index=X.index)
-
-    return X_df
-
-
-def load_label_binarizer(parent_directory: str) -> LabelBinarizer:
-    # Load the LabelBinarizer from the pickle file
-    label_binarizer_path = f"{parent_directory}/label_binarizer.pkl"
-    with open(label_binarizer_path, "rb") as file:
-        label_binarizer = joblib.load(file)
-
-    return label_binarizer
-
-
-def preprocess_dataset(
-    df: pd.DataFrame,
-    label_column: str,
-    parent_directory: Path,
-    sample_size: float = 0.2,
-) -> None:
-    def clean_data(
-        df: pd.DataFrame, label_column: str, min_frequency_threshold: int = 10
-    ) -> None:
-        # Remove NaN, infinity, and duplicate values
-        df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df.dropna(inplace=True)
-        df.drop_duplicates(inplace=True)
-
-        # Drop constant columns
-        df.drop(
-            columns=[col for col in df.columns if df[col].nunique() == 1],
-            inplace=True,
-        )
-
-        # Drop infrequent classes with fewer than min_frequency_threshold samples
-        # Get counts for each class
-        class_counts = df[label_column].value_counts()
-        df = df[
-            df[label_column].isin(
-                class_counts[class_counts >= min_frequency_threshold].index
-            )
-        ]
-
-        return df
-
-    def transform_labels(
-        y: pd.Series, X: pd.DataFrame, label_column: str, lb: LabelBinarizer
-    ) -> np.ndarray:
-        # Label binarize the label column
-        y_preprocessed = lb.transform(y)
-
-        y_preprocessed = pd.DataFrame(
-            y_preprocessed,
-            index=X.index,
-            columns=[f"{label_column}_{i}" for i in range(y_preprocessed.shape[1])],
-        )
-
-        y_preprocessed = np.argmax(y_preprocessed.values, axis=1)
-
-        return y_preprocessed
-
-    def transform_data() -> list[pd.DataFrame | np.ndarray]:
-        # Fit the label binarizer on the whole dataset
-        lb = LabelBinarizer()
-        y = df[label_column]
-        lb.fit(y)
-        # Save encoder
-        joblib.dump(lb, parent_directory / "label_binarizer.pkl")
-
-        # Split dataset
-        train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
-
-        X_train = train_df.drop(columns=[label_column])
-        y_train = train_df[label_column]
-        X_test = test_df.drop(columns=[label_column])
-        y_test = test_df[label_column]
-
-        # Save train dataset to know the expected format for the classifiers
-        X_train.iloc[0].to_frame().T.to_csv(
-            parent_directory / "classifier_data_format.csv", index=False
-        )
-
-        # Transform and scale features
-        X_train_preprocessed = transform_and_scale_features(
-            X_train, parent_directory, fit_scaler=True
-        )
-        X_test_preprocessed = transform_and_scale_features(
-            X_test, parent_directory, fit_scaler=False
-        )
-
-        # Transform labels
-        y_train_preprocessed = transform_labels(
-            y=y_train, X=X_train_preprocessed, label_column="Label", lb=lb
-        )
-        y_test_preprocessed = transform_labels(
-            y=y_test, X=X_test_preprocessed, label_column="Label", lb=lb
-        )
-
-        return [
-            X_train_preprocessed,
-            y_train_preprocessed,
-            X_test_preprocessed,
-            y_test_preprocessed,
-            X_train,
-            y_train,
-            X_test,
-            y_test,
-        ]
-
-    # Only use a portion of the dataset to improve speed and satisfy memory limitations
-    df = df.sample(frac=sample_size, random_state=42)
-
-    # Save initial dataset metrics
-    with open(parent_directory / "dataset_metrics.txt", "w") as f:
-        f.write("Initial Dataset Metrics\n")
-        f.write(f"Dataset Size: {df.memory_usage(index=True, deep=True).sum()} bytes\n")
-        f.write(f"Number of columns: {len(df.columns.unique())}\n")
-        f.write(f"Unique columns: {df.columns.unique()}\n\n")
-
-    # Drop irrelevant features
-    fsa = FeatureSelectionAgent(
-        df=df, label_column=label_column, dataset_name=parent_directory.name
+    # Drop constant columns
+    df.drop(
+        columns=[col for col in df.columns if df[col].nunique() == 1],
+        inplace=True,
     )
-    df = fsa.select_features()
 
-    # Clean data
-    df = clean_data(df, label_column)
-    # Remove non-numeric characters from numeric columns
-    df = clean_numeric_columns(df)
+    # Drop infrequent classes with fewer than min_frequency_threshold samples
+    # Get counts for each class
+    class_counts = df[label_column].value_counts()
+    df = df[
+        df[label_column].isin(
+            class_counts[class_counts >= min_frequency_threshold].index
+        )
+    ]
 
-    # Save cleaned dataset metrics
-    with open(parent_directory / "dataset_metrics.txt", "a") as f:
-        f.write("Cleaned Dataset Metrics\n")
-        f.write(f"Dataset Size: {df.memory_usage(index=True, deep=True).sum()} bytes\n")
-        f.write(f"Number of columns: {len(df.columns.unique())}\n")
-        f.write(f"Unique columns: {df.columns.unique()}")
+    return df
 
-    # Split dataset into train and test
-    # Use the FeatureHasher, StandardScaler, and LabelBinarizer to transform the datasets
-    return transform_data()
+
+def keep_selected_features(
+    df: pd.DataFrame, features_to_keep: list[str], label_column: str
+) -> pd.DataFrame:
+    """
+    keep_selected_features keeps only the specified features and ensures that the label
+    column is retained.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to drop the features from.
+        features_to_keep (list[str]): The list of feature names to keep.
+        label_column (str): The name of the label column. Used to ensure that the label
+        column is always retained.
+
+    Returns:
+        pd.DataFrame: The dataframe with only the desired columns.
+    """
+    # Ensure that the label column is never removed
+    columns_to_keep = set(features_to_keep)
+    columns_to_keep.add(label_column)
+
+    # Find the valid columns that exist in the DataFrame, and the columns_to_keep set
+    valid_columns = list(columns_to_keep.intersection(df.columns))
+
+    return df[valid_columns]
