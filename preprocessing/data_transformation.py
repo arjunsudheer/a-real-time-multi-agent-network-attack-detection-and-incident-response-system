@@ -8,6 +8,31 @@ from sklearn.preprocessing import LabelBinarizer
 import joblib
 
 
+def match_column_format(df: pd.DataFrame, reference_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    match_column_format matches the columns and column order of a DataFrame to a reference DataFrame.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to modify.
+        reference_df (pd.DataFrame): The reference DataFrame to use when matching the columns and column order.
+
+    Returns:
+        pd.DataFrame: The modified DataFrame with the matched columns and column order to the reference DataFrame.
+    """
+    # Add missing columns
+    for col in reference_df.columns:
+        if col not in df.columns:
+            df[col] = 0.0
+
+    # Drop extra columns
+    df = df[[col for col in reference_df.columns if col in df.columns]]
+
+    # Reorder to match reference
+    df = df[reference_df.columns]
+
+    return df
+
+
 def transform_and_scale_features(
     X: pd.DataFrame, parent_directory: Path, fit_scaler: bool = False
 ) -> pd.DataFrame:
