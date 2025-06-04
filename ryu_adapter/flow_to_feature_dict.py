@@ -1,5 +1,7 @@
 import ipaddress
 import time
+from datetime import datetime
+import logging
 
 ORDERED_FEATURE_NAMES = [
     "Src IP",
@@ -15,7 +17,11 @@ ORDERED_FEATURE_NAMES = [
 
 
 def ryu_flow_to_feature_dict(ryu_flow: dict) -> dict:
+    # Initialize features with appropriate default types
     features = {name: 0.0 for name in ORDERED_FEATURE_NAMES}
+    features['Src IP'] = '0.0.0.0'  # Default string fields
+    features['Dst IP'] = '0.0.0.0'
+    features['Timestamp'] = '' # Default string fields
     match = ryu_flow.get("match", {})
     duration_sec = float(ryu_flow.get("duration_sec", 0))
     duration_nsec = float(ryu_flow.get("duration_nsec", 0))
@@ -32,19 +38,34 @@ def ryu_flow_to_feature_dict(ryu_flow: dict) -> dict:
     udp_src = match.get("udp_src") or match.get("tp_src")
     udp_dst = match.get("udp_dst") or match.get("tp_dst")
 
+    # --- IP Address Formatting ---
     try:
-        features["Src IP"] = float(int(ipaddress.IPv4Address(ipv4_src)))
-    except Exception:
-        features["Src IP"] = 0.0
-    try:
-        features["Dst IP"] = float(int(ipaddress.IPv4Address(ipv4_dst)))
-    except Exception:
-        features["Dst IP"] = 0.0
+        # Convert to IPv4Address object and then to string
+        features['Src IP'] = str(ipaddress.IPv4Address(ipv4_src)) if ipv4_src else '0.0.0.0'
+    except Exception as e:
+        logging.debug(f"Could not parse source IP '{ipv4_src}': {e}")
+        features['Src IP'] = '0.0.0.0'  # Default if IP is invalid or missing
 
+    try:
+        # Convert to IPv4Address object and then to string
+        features['Dst IP'] = str(ipaddress.IPv4Address(ipv4_dst)) if ipv4_dst else '0.0.0.0'
+    except Exception as e:
+        logging.debug(f"Could not parse destination IP '{ipv4_dst}': {e}")
+        features['Dst IP'] = '0.0.0.0'  # Default if IP is invalid or missing
+
+    # --- Port and Protocol (remain float) ---
     features["Src Port"] = float(tcp_src or udp_src or 0)
     features["Dst Port"] = float(tcp_dst or udp_dst or 0)
     features["Protocol"] = float(ip_proto or 0)
-    features["Timestamp"] = time.time()
+
+    # --- Timestamp Formatting ---
+    try:
+        features['Timestamp'] = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception as e:
+        logging.debug(f"Could not format timestamp: {e}")
+        features['Timestamp'] = '' # Default if timestamp formatting fails
+
+    # --- Flow Duration (in microseconds, remains float) ---
     features["Flow Duration"] = duration * 1_000_000  # microseconds
 
     if duration > 0:
