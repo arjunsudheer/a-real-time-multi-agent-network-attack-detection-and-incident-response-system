@@ -4,7 +4,7 @@ import pandas as pd
 import joblib
 from pathlib import Path
 
-from sklearn.naive_bayes import LabelBinarizer
+from sklearn.preprocessing import LabelEncoder
 
 from agents.feature_selection_agent import FeatureSelectionAgent
 from agents.labeling_agent import LabelingAgent
@@ -16,7 +16,7 @@ from preprocessing.data_cleaning import (
 from attack_detection_pipeline.pre_detection import PreDetection
 from attack_detection_pipeline.post_classification import PostClassification
 from preprocessing.data_transformation import (
-    load_label_binarizer,
+    load_label_encoder,
     match_column_format,
     transform_and_scale_features,
     transform_data,
@@ -151,7 +151,7 @@ class NetworkAgentSystem:
             f.write(f"Unique columns: {df.columns.unique()}")
 
         # Split dataset into train and test
-        # Use the FeatureHasher, StandardScaler, and LabelBinarizer to transform the datasets
+        # Use the FeatureHasher, StandardScaler, and LabelEncoder to transform the datasets
         (
             self.X_train_original,
             self.y_train_original,
@@ -217,17 +217,14 @@ class NetworkAgentSystem:
             original_samples=self.X_test_original,
         )
         # Filter the original labels based on the malicious indices to use for building the Labeling Agent's long-term memory
-        # filtered_original_labels = self.y_test_original[malicious_indices]
-        # Assuming malicious_indices came from X_test_preprocessed or X_test_original
-        positions = self.X_test_original.index.get_indexer(malicious_indices)
-        filtered_original_labels = self.y_test_original[positions]
+        filtered_original_labels = self.y_test_original[malicious_indices]
 
         # Post-classification evaluation
         self.post_classification.save_classification_metrics(
             self.X_test_post_classification,
             self.y_test_post_classification,
             unique_labels=joblib.load(
-                self.parent_directory / "label_binarizer.pkl"
+                self.parent_directory / "label_encoder.pkl"
             ).classes_,  # Ignore the "Benign" label since it is not used in training
         )
         # Post-classification low agreement sample filtering
@@ -272,7 +269,7 @@ class NetworkAgentSystem:
         self,
         preprocessed_sample: pd.DataFrame,
         original_sample: pd.DataFrame,
-        lb: LabelBinarizer,
+        le: LabelEncoder,
     ) -> str:
         # Pre-detection malicious sample filtering
         (
@@ -298,7 +295,7 @@ class NetworkAgentSystem:
         )
         # If there are no low agreement indices, then an attack class was determined
         if len(low_agreement_index) == 0:
-            return lb.inverse_transform(predictions[0])
+            return le.inverse_transform(predictions["majority_predictions"])[0]
 
         # Prompt labeling agent to resolve the final class prediction for the low_agreement sample
         la = LabelingAgent(
@@ -361,7 +358,7 @@ if __name__ == "__main__":
                 prediction = nas.inference_attack_detection_pipeline(
                     preprocessed_sample=preprocessed_live_sample,
                     original_sample=live_sample,
-                    lb=load_label_binarizer(parent_directory=parent_directory),
+                    le=load_label_encoder(parent_directory=parent_directory),
                 )
                 logging.info(f"Final prediction for live traffic: {prediction}")
 
