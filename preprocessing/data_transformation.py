@@ -4,7 +4,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_extraction import FeatureHasher
-from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import LabelEncoder
 import joblib
 
 
@@ -78,22 +78,22 @@ def transform_and_scale_features(
     return X_df
 
 
-def load_label_binarizer(parent_directory: str) -> LabelBinarizer:
+def load_label_encoder(parent_directory: str) -> LabelEncoder:
     """
-    load_label_binarizer loads a saved LabelBinarizer.
+    load_label_encoder loads a saved LabelEncoder.
 
     Args:
-        parent_directory (str): The directory where the LabelBinarizer pickle file is stored.
+        parent_directory (str): The directory where the LabelEncoder pickle file is stored.
 
     Returns:
-        LabelBinarizer: The saved LabelBinarizer.
+        LabelEncoder: The saved LabelEncoder.
     """
-    # Load the LabelBinarizer from the pickle file
-    label_binarizer_path = f"{parent_directory}/label_binarizer.pkl"
-    with open(label_binarizer_path, "rb") as file:
-        label_binarizer = joblib.load(file)
+    # Load the LabelEncoder from the pickle file
+    label_encoder_path = f"{parent_directory}/label_encoder.pkl"
+    with open(label_encoder_path, "rb") as file:
+        label_encoder = joblib.load(file)
 
-    return label_binarizer
+    return label_encoder
 
 
 def transform_data(
@@ -105,49 +105,37 @@ def transform_data(
     transform_data splits the DataFrame into train and test DataFrame and then transforms the DataFrame.
 
     Uses the FeatureHasher to transform the categorical features into numerical values. Uses the
-    StandardScaler to scale the numerical values. Uses the LabelBinarizer to transform the labels in a way
-    that does not impose an arbitrary ordering.
+    StandardScaler to scale the numerical values. Uses the LabelEncoder to convert the labels into a
+    numerical representation.
 
     Args:
         df (pd.DataFrame): The DataFrame to transform and scale.
         label_column (str): The name of the label column to handle separately from the features.
-        parent_directory (Path): The path to store the fit LabelBinarizer and StandardScaler.
+        parent_directory (Path): The path to store the fit LabelEncoder and StandardScaler.
 
     Returns:
-        list[pd.DataFrame | np.ndarray]: Returns X_train, y_train, X_test, and y_test for the preprocessed DataFrames
-        first, and then the original DataFrames that have just been split.
+        list[pd.DataFrame | np.ndarray]: Returns X_train, y_train, X_test, and y_test for the original
+        dataset first, the pre-processed datasets for pre-detection second, and the pre-processed datasets
+        for post-classification third.
     """
 
-    def transform_labels(
-        y: pd.Series, X: pd.DataFrame, lb: LabelBinarizer
-    ) -> np.ndarray:
+    def transform_labels(y: pd.Series, X: pd.DataFrame, le: LabelEncoder) -> np.ndarray:
         """
-        transform_labels transforms the label column into a list of columns of 0's and 1's, similar to OneHotEncoding.
-
-        Transforms each label into a list of label columns where 0 indicates a false value, and 1 indicates a true value.
-        A value of 1 indicates the actual label of the current sample. Avoids imposing any numerical ordering on the labels.
+        transform_labels transforms the label column into integer class labels using LabelEncoder.
 
         Args:
             y (pd.Series): The labels to transform.
             X (pd.DataFrame): The features in the dataframe. Used to align the index after transforming the labels.
-            lb (LabelBinarizer): The fit LabelBinarizer that should be used for the transformation.
+            le (LabelEncoder): The fit LabelEncoder that should be used for the transformation.
 
         Returns:
             np.ndarray: The transformed labels.
         """
-        # Label binarize the label column
-        y_preprocessed = lb.transform(y)
+        # Label encode the label column
+        y_encoded = le.transform(y)
 
-        # Match the index with the features and rename the columns created by LabelBinarizer
-        y_preprocessed = pd.DataFrame(
-            y_preprocessed,
-            index=X.index,
-            columns=[f"{label_column}_{i}" for i in range(y_preprocessed.shape[1])],
-        )
-
-        y_preprocessed = np.argmax(y_preprocessed.values, axis=1)
-
-        return y_preprocessed
+        # Convert label column to numpy array with the same index alignment as features DataFrame
+        return pd.Series(y_encoded, index=X.index).values
 
     # Split dataset
     train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
@@ -171,11 +159,11 @@ def transform_data(
     y_test_pre_detection = np.where(y_test_original == "Benign", 0, 1)
 
     # Preprocess for post-classification
-    # Fit the label binarizer on the whole dataset excluding the "Benign" label
-    lb = LabelBinarizer()
+    # Fit the label encoder on the whole dataset excluding the "Benign" label
+    le = LabelEncoder()
     y = df[df[label_column] != "Benign"][label_column]
-    lb.fit(y)
-    joblib.dump(lb, parent_directory / "label_binarizer.pkl")  # Save encoder
+    le.fit(y)
+    joblib.dump(le, parent_directory / "label_encoder.pkl")  # Save encoder
     # Remove the benign samples for post-classification
     train_mask = y_train_original != "Benign"
     X_train_post_classification = X_train_original[train_mask].reset_index(drop=True)
@@ -192,12 +180,12 @@ def transform_data(
     )
     # Transform labels for post-classification
     y_train_post_classification = transform_labels(
-        y=y_train_post_classification, X=X_train_post_classification, lb=lb
+        y=y_train_post_classification, X=X_train_post_classification, le=le
     )
     y_test_post_classification = transform_labels(
         y=y_test_post_classification,
         X=X_test_post_classification,
-        lb=lb,
+        le=le,
     )
 
     return [
