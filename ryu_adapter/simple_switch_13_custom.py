@@ -24,6 +24,8 @@ from ryu.lib.packet import ether_types
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import tcp
 from ryu.lib.packet import udp
+from ryu.lib.packet import icmp
+
 
 
 class SimpleSwitch13(app_manager.RyuApp):
@@ -173,19 +175,32 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             tcp_pkt = pkt.get_protocol(tcp.tcp)
             udp_pkt = pkt.get_protocol(udp.udp)
+            icmp_pkt = pkt.get_protocol(icmp.icmp)
             self.logger.info("TCP packet: %s", tcp_pkt)
             self.logger.info("UDP packet: %s", udp_pkt)
+            self.logger.info("ICMP packet: %s", icmp_pkt)
 
             if tcp_pkt:
+                self.logger.info("packet in match in tcp_pkt %s %s %s %s", dpid, src, dst, in_port)
                 match_fields.update({
                     'tcp_src': tcp_pkt.src_port,
                     'tcp_dst': tcp_pkt.dst_port
                 })
             elif udp_pkt:
+                self.logger.info("packet in match in udp_pkt %s %s %s %s", dpid, src, dst, in_port)
                 match_fields.update({
                     'udp_src': udp_pkt.src_port,
                     'udp_dst': udp_pkt.dst_port
                 })
+            elif icmp_pkt:
+                # ICMP has no ports, but still set ip_proto = 1 and zero ports
+                self.logger.info("packet in match in icmp_pkt %s %s %s %s", dpid, src, dst, in_port)
+                match_fields["ip_proto"] = 1
+            
+            else:
+                self.logger.info("No Protocal match found!! ======> ")
+                self.logger.info("No packet match found %s %s %s %s", dpid, src, dst, in_port)
+
 
         self.logger.info("IP packet: %s", ip_pkt)
         match = parser.OFPMatch(**match_fields)

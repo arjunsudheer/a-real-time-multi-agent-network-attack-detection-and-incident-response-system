@@ -2,10 +2,12 @@
 import requests
 import logging
 import pandas as pd
-from ryu_adapter.flow_to_feature_dict import (
+from flow_to_feature_dict import (
     ryu_flow_to_feature_dict,
     ORDERED_FEATURE_NAMES,
 )
+import json
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +25,7 @@ def get_flow_stats(dpid=1):
         return []
 
 
-def get_live_feature_vectors_from_ryu(num_samples_to_fetch=20, dpid=1) -> pd.DataFrame:
+def get_live_feature_vectors_from_ryu(num_samples_to_fetch=20, dpid=2) -> pd.DataFrame:
     logger.info(f"Fetching flow stats from Ryu for DPID {dpid}...")
     ryu_flows = get_flow_stats(dpid)
     ryu_flows = sorted(ryu_flows, key=lambda x: x.get("packet_count", 0), reverse=True)
@@ -33,11 +35,13 @@ def get_live_feature_vectors_from_ryu(num_samples_to_fetch=20, dpid=1) -> pd.Dat
     valid_flows = 0
 
     for ryu_flow in ryu_flows[:num_samples_to_fetch]:
+        print(json.dumps(ryu_flow, indent=2))
         match = ryu_flow.get("match", {})
 
         # Filter for flows with identifiable IP-level features
         if not any(k in match for k in ["ipv4_src", "nw_src"]):
-            continue
+            print('No match')
+            # continue
 
         try:
             feature_dict = ryu_flow_to_feature_dict(ryu_flow)
