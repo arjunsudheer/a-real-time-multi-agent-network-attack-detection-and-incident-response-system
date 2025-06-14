@@ -14,7 +14,12 @@ from agents.llm_tools import safe_web_search_tool, safe_arxiv_retrieve_tool
 
 
 class LabelingAgent:
-    def __init__(self, dataset_directory: Path, label_column: str) -> None:
+    def __init__(
+        self,
+        dataset_directory: Path,
+        label_column: str,
+        use_long_term_memory: bool = False,
+    ) -> None:
         """
         __init__ initializes the dataset directory, label column, and labeling agent.
 
@@ -24,9 +29,11 @@ class LabelingAgent:
         Args:
             dataset_directory (Path): The path to the parent directory containing the dataset.
             label_column (str): The name of the column in the dataset containing the labels.
+            use_long_term_memory (bool, optional): Whether or not the long-term memory RAG should be provided as a tool. Defaults to False.
         """
         self.dataset_directory = dataset_directory
         self.label_column = label_column
+        self.use_long_term_memory = use_long_term_memory
 
         # Long term memory dataset
         self.ltm_db = KnowledgeSource(
@@ -94,14 +101,13 @@ class LabelingAgent:
             max_execution_time=300,  # 5 minutes timeout
         )
 
-    def __initialize_tools(self, include_ltm: bool = False) -> None:
+    def __initialize_tools(self) -> None:
         """
         __initialize_tools initializes the tools for the labeling agent to use.
 
         Creates a unified tool for the labeling agent.
 
         Args:
-            include_ltm (bool, optional): Whether or not the long-term memory RAG should be
             provided as a tool. Should be set to False during long-term memory cache building,
             and True during inference. Defaults to False.
         """
@@ -123,7 +129,7 @@ class LabelingAgent:
             Tool(
                 name="ViewUniqueLabels",
                 func=lambda _: view_unique_labels(),
-                description="Shows the unique elements in the dataset's label column. You do not need to pass any inputs, just call the tool.",
+                description=view_unique_labels.__doc__,
             ),
             safe_web_search_tool,
             safe_arxiv_retrieve_tool,
@@ -131,14 +137,14 @@ class LabelingAgent:
 
         # Only allow the long-term memory access tool to be used during inference
         # This tool will not be available during training since the long-term memory cache has not been created yet
-        if include_ltm:
+        if self.use_long_term_memory:
             self.tools.append(
                 Tool(
                     name="AccessPreviousCorrectResponses",
                     func=lambda query: self.ltm_db.retrieve_relevant_knowledge(
                         query=query
                     ),
-                    description="Shows the first 100 rows of the dataset. You do not need to pass any inputs, just call the tool.",
+                    description=self.ltm_db.retrieve_relevant_knowledge.__doc__,
                 )
             )
 
