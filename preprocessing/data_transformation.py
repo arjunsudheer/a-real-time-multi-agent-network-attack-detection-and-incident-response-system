@@ -2,39 +2,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.feature_extraction import FeatureHasher
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import LabelEncoder
 import joblib
 
 
-def match_column_format(df: pd.DataFrame, reference_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    match_column_format matches the columns and column order of a DataFrame to a reference DataFrame.
-
-    Args:
-        df (pd.DataFrame): The DataFrame to modify.
-        reference_df (pd.DataFrame): The reference DataFrame to use when matching the columns and column order.
-
-    Returns:
-        pd.DataFrame: The modified DataFrame with the matched columns and column order to the reference DataFrame.
-    """
-    # Add missing columns
-    for col in reference_df.columns:
-        if col not in df.columns:
-            df[col] = 0.0
-
-    # Drop extra columns
-    df = df[[col for col in reference_df.columns if col in df.columns]]
-
-    # Reorder to match reference
-    df = df[reference_df.columns]
-
-    return df
-
-
 def transform_and_scale_features(
-    X: pd.DataFrame, parent_directory: Path, fit_scaler: bool = False
+    X: pd.DataFrame, parent_directory: Path, fit_preprocessor: bool = False
 ) -> pd.DataFrame:
     """
     transform_and_scale_features transforms categorical columns to numerical columns and scales numerical columns.
@@ -45,37 +20,70 @@ def transform_and_scale_features(
     Args:
         X (pd.DataFrame): The features that need to be transformed.
         parent_directory (Path): The path where the StandardScaler is saved.
-        fit_scaler (bool, optional): Whether or not the StandardScaler should be fit, or an already fit StandardScaler
+        fit_preprocessor (bool, optional): Whether or not the StandardScaler should be fit, or an already fit StandardScaler
         should be used. Defaults to False.
 
     Returns:
         pd.DataFrame: The transformed features.
     """
-    # Use FeatureHasher instead of OneHotEncoder due to memory issues
-    fh = FeatureHasher(n_features=1024, input_type="string")
 
-    categorical_columns = X.select_dtypes(include=["object", "category"]).columns
+    def get_feature_names(preprocessor):
+        """
+        get_feature_names extracts the output feature names from a fitted ColumnTransformer.
+        Handles transformers like StandardScaler and OneHotEncoder.
+        """
+        output_features = []
 
-    # FeatureHash categorical columns
-    X_categorical = fh.transform(X[categorical_columns].astype(str).values)
-    # Convert to dense array
-    X_categorical = X_categorical.toarray()
-    X_numerical = X.drop(columns=categorical_columns, errors="ignore")
+        for _, transformer, cols in preprocessor.transformers_:
+            if transformer == "drop":
+                continue
+            elif transformer == "passthrough":
+                output_features.extend(cols)
+            elif hasattr(transformer, "get_feature_names_out"):
+                # e.g., OneHotEncoder supports this
+                names = transformer.get_feature_names_out(cols)
+                output_features.extend(names)
+            else:
+                # fallback for transformers that don't change feature names (e.g., StandardScaler)
+                output_features.extend(cols)
 
-    # Scale numerical features
-    if fit_scaler:
+        return output_features
+
+    categorical_columns = X.select_dtypes(
+        include=["object", "category"]
+    ).columns.tolist()
+    numerical_columns = X.select_dtypes(include=["number", "bool"]).columns.tolist()
+
+    if fit_preprocessor:
+        ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
         scaler = StandardScaler()
-        X_numerical = scaler.fit_transform(X_numerical)
-        joblib.dump(scaler, parent_directory / "standard_scaler.pkl")
+
+        # Compose pipeline to handle categorical and numerical columns separately
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ("num", scaler, numerical_columns),
+                ("cat", ohe, categorical_columns),
+            ]
+        )
+
+        X_preprocessed = preprocessor.fit_transform(X)
+        feature_names = get_feature_names(preprocessor)
+        # Reconstruct DataFrame with index and column names
+        X_preprocessed_df = pd.DataFrame(
+            X_preprocessed, columns=feature_names, index=X.index
+        )
+        joblib.dump(preprocessor, parent_directory / "preprocessor_pipeline.pkl")
     else:
-        scaler = joblib.load(parent_directory / "standard_scaler.pkl")
-        X_numerical = scaler.transform(X_numerical)
+        preprocessor = joblib.load(parent_directory / "preprocessor_pipeline.pkl")
 
-    # Reconstruct DataFrame
-    X_processed = np.hstack([X_numerical, X_categorical])
-    X_df = pd.DataFrame(X_processed, index=X.index)
+        X_preprocessed = preprocessor.transform(X)
+        feature_names = get_feature_names(preprocessor)
+        # Reconstruct DataFrame with index and column names
+        X_preprocessed_df = pd.DataFrame(
+            X_preprocessed, columns=feature_names, index=X.index
+        )
 
-    return X_df
+    return X_preprocessed_df
 
 
 def load_label_encoder(parent_directory: str) -> LabelEncoder:
@@ -149,10 +157,10 @@ def transform_data(
     # Preprocess for pre-detection
     # Transform and scale features for pre-detection
     X_train_pre_detection = transform_and_scale_features(
-        X_train_original, parent_directory, fit_scaler=True
+        X_train_original, parent_directory, fit_preprocessor=True
     )
     X_test_pre_detection = transform_and_scale_features(
-        X_test_original, parent_directory, fit_scaler=False
+        X_test_original, parent_directory
     )
     # Convert labels to binary (0 = "Benign", 1 = all other malicious classes)
     y_train_pre_detection = np.where(y_train_original == "Benign", 0, 1)
@@ -173,10 +181,10 @@ def transform_data(
     y_test_post_classification = y_test_original[test_mask].reset_index(drop=True)
     # Transform and scale features for post-classification
     X_train_post_classification = transform_and_scale_features(
-        X_train_post_classification, parent_directory, fit_scaler=True
+        X_train_post_classification, parent_directory, fit_preprocessor=True
     )
     X_test_post_classification = transform_and_scale_features(
-        X_test_post_classification, parent_directory, fit_scaler=False
+        X_test_post_classification, parent_directory
     )
     # Transform labels for post-classification
     y_train_post_classification = transform_labels(
