@@ -39,6 +39,22 @@ class RFCNetworkAttackClassifier:
             )
             self.__train()
 
+        # Assume X_train is the DataFrame you used to train the Random Forest
+        feature_names = (
+            X_train.columns
+        )  # or use self.X_train.columns if it's an attribute
+
+        # Zip together feature names and their importance scores
+        feature_importances = zip(feature_names, self.best_clf.feature_importances_)
+
+        # Convert to DataFrame for easy sorting and display
+        importance_df = pd.DataFrame(
+            feature_importances, columns=["Feature", "Importance"]
+        )
+        importance_df = importance_df.sort_values(by="Importance", ascending=False)
+
+        print(importance_df)
+
     def __train(self) -> None:
         """
         __train trains the Random Forest classifier using Optuna for hyperparameter tuning.
@@ -83,7 +99,7 @@ class RFCNetworkAttackClassifier:
             )
 
             # Compute cross-validated F1-score (weighted)
-            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
             scores = cross_val_score(
                 clf,
                 self.X_train,
