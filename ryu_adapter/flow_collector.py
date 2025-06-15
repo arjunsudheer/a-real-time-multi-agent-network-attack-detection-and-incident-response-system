@@ -2,7 +2,7 @@
 import requests
 import logging
 import pandas as pd
-from flow_to_feature_dict import (
+from .flow_to_feature_dict import (
     ryu_flow_to_feature_dict,
     ORDERED_FEATURE_NAMES,
 )
