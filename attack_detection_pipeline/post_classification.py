@@ -58,15 +58,13 @@ class PostClassification:
             tuple[dict, list]: The predictions from each classifier and the calculated majority prediction. The agreement ratio for the majority sample prediction.
         """
         majority_predictions = []
-        agreement_ratios = []
+        low_agreement_indices = []
         predictions = {}
 
         predictions["rfc"] = self.rfc.predict_network_attack_class(samples)
         predictions["xgb"] = self.xgb.predict_network_attack_class(samples)
         predictions["mlp"] = self.mlp.predict_network_attack_class(samples)
         predictions["knn"] = self.knn.predict_network_attack_class(samples)
-
-        num_post_detection_classifiers = len(predictions.keys())
 
         # Majority predictions
         for i in range(len(predictions["rfc"])):
@@ -75,14 +73,22 @@ class PostClassification:
                 current_predictions.append(predictions[classifier][i])
 
             occurrences = Counter(current_predictions)
-            majority = occurrences.most_common(1)[0]
-            majority_predictions.append(majority[0])
+            majority_class_predictions = occurrences.most_common()
 
-            agreement_ratios.append(majority[1] / num_post_detection_classifiers)
+            # Handle ties
+            if (
+                len(majority_class_predictions) > 1
+                and majority_class_predictions[0][1] == majority_class_predictions[1][1]
+            ):
+                low_agreement_indices.append(i)
+
+            # Even if there is no clear majority, use dummy value of first
+            # majority prediction to ensure consistent sample counts for evaluation
+            majority_predictions.append(majority_class_predictions[0][0])
 
         predictions["majority_predictions"] = np.array(majority_predictions)
 
-        return predictions, agreement_ratios
+        return predictions, low_agreement_indices
 
     def __get_classifier_prediction_probabilities(self, samples: pd.DataFrame) -> dict:
         """
@@ -214,16 +220,9 @@ class PostClassification:
             tuple[dict, pd.DataFrame, list]: The classifier predictions, low agreement original samples, and the low agreement sample indices.
         """
         # Post-classification predictions
-        predictions, agreement_ratios = self.__get_classifier_predictions(
+        predictions, low_agreement_sample_indices = self.__get_classifier_predictions(
             preprocessed_malicious_samples
         )
-
-        # Find the low agreement ratio sample indices
-        low_agreement_sample_indices = []
-        for i in range(len(agreement_ratios)):
-            agreement_ratio = agreement_ratios[i]
-            if agreement_ratio <= 0.5:
-                low_agreement_sample_indices.append(i)
 
         low_agreement_original_samples_df = original_malicious_samples.iloc[
             low_agreement_sample_indices

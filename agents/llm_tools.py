@@ -30,6 +30,8 @@ def safe_web_search(query: str) -> str:
     """
     safe_web_search uses the DuckDuckGo search engine to perform a web search.
 
+    Works best with short queries, ideally under 20 words.
+
     Args:
         query (str): The web search query.
 
@@ -61,12 +63,12 @@ def safe_arxiv_retrieve(query: str) -> str:
 safe_web_search_tool = Tool(
     name="WebSearch",
     func=lambda query: safe_web_search(query),
-    description="Search the internet for information about IoT security and threats. You need to pass the search query to the tool. Use short queries, do not list many comma-separated values. Keep queries under 20 words.",
+    description=safe_web_search.__doc__,
 )
 safe_arxiv_retrieve_tool = Tool(
     name="AcademicLiteratureSearch",
     func=lambda query: safe_arxiv_retrieve(query),
-    description="Retrieve relevant academic papers about IoT security from arXiv. Please be specific regarding what you want to find. Mention all features you want to learn more about.",
+    description=safe_arxiv_retrieve.__doc__,
 )
 
 

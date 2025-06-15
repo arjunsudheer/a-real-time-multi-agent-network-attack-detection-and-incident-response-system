@@ -39,7 +39,7 @@ class XGBoostNetworkAttackClassifier:
             Path(f"{self.dataset_directory}/saved_classifier_models").mkdir(
                 exist_ok=True, parents=True
             )
-            self.kf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            self.kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
             self.__train()
 
     def __train(self) -> None:

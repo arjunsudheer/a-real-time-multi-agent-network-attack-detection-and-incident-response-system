@@ -10,27 +10,22 @@ We use the ACI IOT Dataset for our experiment. Originally from: [https://www.kag
 
 ## File download Google Drive
 
-Google Drive link: [https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing](https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing)
+Please download the datasets.zip file from the Google Drive Link provided below. Once you have downloaded the zip file, unzip it in the project root directory using the following command:
 
+```
+unzip datasets.zip
+```
+
+Google Drive link: [https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing](https://drive.google.com/drive/folders/1MEbJYqekjPWPYNwZGwWgy40v0Wd7TE-0?usp=sharing)
 
 ## Environment Setup
 
 Create a python virtual environment
-```bash
+
+```
 python3 -m venv venv
-source venv/bin/activate # on unix
-pip install -r requirements.txt
-
-```
-
-
-Downlaod `label_encoder.pkl`, `test.csv`, and `scaler.pkl`, put them in project root
-
-
-Download the classifier pre-trained weights `saved_models.zip` and extract them as `saved_models/` folder
-
-```
-unzip saved_models.zip
+source venv/bin/activate
+pip3 install -r requirements.txt
 ```
 
 ## SDN Simulation Setup: Ryu + Mininet + LLM-based Threat Detection
@@ -39,24 +34,22 @@ This section documents how to set up a Software-Defined Network (SDN) simulation
 
 ---
 
-## Prerequisites
-
-### On macOS (Host)
+### On Your Host Machine
 
 - Python 3.9 (use `pyenv`)
 - Ryu SDN controller
 
 Install Ryu in Python 3.9 virtualenv:
 
-```bash
+```
 pyenv install 3.9.18
 pyenv virtualenv 3.9.18 ryu39
 pyenv activate ryu39
 
-pip install ryu eventlet==0.30.2
+pip3 install ryu eventlet==0.30.2
 ```
 
->Ryu does not work with Python 3.12+. Use Python 3.9 for compatibility.
+> Ryu does not work with Python 3.12+. Use Python 3.9 for compatibility.
 
 ### On Ubuntu VM (Guest)
 
@@ -70,58 +63,62 @@ pip install ryu eventlet==0.30.2
 
 Install:
 
-```bash
+```
 sudo apt update
 sudo apt install -y mininet openvswitch-switch hping3 nmap
 ```
 
 ### System Architecture (Mininet + RYU)
-[macOS]
-└── Ryu Controller (IP: 192.168.64.1)
+
+[Host]
+
+└── Ryu Controller (IP: <Your Host Machine IP Address>)
 
 [Ubuntu VM]
+
 └── Mininet with:
-    ├── h1, h2, h3 (virtual hosts)
-    └── s1, s2, s3 (OpenFlow switches)
+
+└── h1, h2, h3 (virtual hosts)
+
+└── s1, s2, s3 (OpenFlow switches)
 
 - Mininet creates a virtual network inside the VM.
 
-- Ryu listens for switch traffic on macOS via REST and OpenFlow.
+- Ryu listens for switch traffic on Host via REST and OpenFlow.
 
-- The LLM pipeline runs on macOS and consumes classified flow data.
-
+- The LLM pipeline runs on Host and consumes classified flow data.
 
 ## Setup Instructions
-### 1. Start Ryu Controller (on macOS)
+
+### 1. Start Ryu Controller (Host)
 
 In your terminal (inside the ryu39 environment):
 
-
-```bash
-ryu-manager ryu.app.simple_switch_13 ryu.app.ofctl_rest
-
 ```
+ryu-manager ryu_adapter/simple_switch_13_custom.py ryu.app.ofctl_rest
+```
+
 This starts:
 
 - A basic OpenFlow 1.3 switch controller
 - A REST API on http://localhost:8080
 
+### 2. Start Mininet (Ubuntu VM)
 
-### 2. Start Mininet (on Ubuntu VM)
+Check your host machine's IP from the VM:
 
-Check Mac's IP from the VM:
-
-```bash
+```
 ip route
 ```
+
 Look for something like 192.168.64.1.
 
 Launch Mininet:
 
 ```
-sudo mn --controller=remote,ip=192.168.64.1 --topo=linear,3 --mac
-
+sudo mn --controller=remote,ip=IP:<Your Host Machine IP Address> --topo=linear,3 --mac
 ```
+
 This creates:
 
 - 3 hosts: h1, h2, h3
@@ -130,43 +127,49 @@ This creates:
 
 - Automatically assigns MAC addresses
 
-### 3.  Test Connectivity
+### 3. Test Connectivity
 
 In the Mininet CLI:
 
->mininet> pingall
+> mininet> pingall
 
 Output:
+
 ```
-*** 
+***
 Results: 0% dropped (6/6 received)
 ```
 
 This confirms network is working and Ryu is handling switch logic.
 
-
 ### 4. Monitor Ryu Controller Logs
+
 In the Ryu terminal (macOS), you'll see:
 
 ```
 packet in 1 00:00:00:00:00:01 00:00:00:00:00:02 2
 ```
-Meaning:
-> Switch 1 received a packet from h1 → h2 and asked Ryu what to do with it.
 
+Meaning:
+
+> Switch 1 received a packet from h1 → h2 and asked Ryu what to do with it.
 
 Inspect flow entries:
 
 > curl http://localhost:8080/stats/flow/1
-
 
 ## Running the Demo
 
 To run the demo as shown in our video, use the following command:
 
 ```
-python agents/network_agent_demo.py
+python3 -m network_agent_system
+```
 
+In your Ubuntu VM, simulate a port scan attack by sending 1000 UDP packets to port 22 using the following command:
+
+```
+h1 hping3 -S -p 22 -i u1000 10.0.0.2
 ```
 
 ## If the browser does not open automatically

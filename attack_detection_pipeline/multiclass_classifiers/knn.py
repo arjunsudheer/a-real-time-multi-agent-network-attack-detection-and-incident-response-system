@@ -1,9 +1,8 @@
 from pathlib import Path
 import joblib
-import cupy as cp
 import numpy as np
 import optuna
-from cuml.neighbors import KNeighborsClassifier
+from sklearn.neighbors import KNeighborsClassifier
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
@@ -22,8 +21,8 @@ class KNNNetworkAttackClassifier:
             y_train (np.ndarray): The train labels.
             dataset_directory (Path): The parent directory to store the classifier weights.
         """
-        self.X_train = cp.asarray(X_train)
-        self.y_train = cp.asarray(y_train)
+        self.X_train = X_train
+        self.y_train = y_train
         self.dataset_directory = dataset_directory
 
         # Load an already trained classifier model if it exists
@@ -64,11 +63,11 @@ class KNNNetworkAttackClassifier:
             )
 
             # Compute cross-validated F1-score (weighted)
-            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
             scores = cross_val_score(
                 clf,
-                self.X_train.get(),
-                self.y_train.get(),
+                self.X_train,
+                self.y_train,
                 cv=cv,
                 scoring="f1_weighted",
             )
@@ -100,7 +99,7 @@ class KNNNetworkAttackClassifier:
         Returns:
             np.ndarray: The KNN classifier predictions.
         """
-        return self.best_clf.predict(cp.asarray(X_test)).get()
+        return self.best_clf.predict(X_test)
 
     def predict_network_attack_class_probabilities(
         self, X_test: pd.DataFrame
@@ -114,4 +113,4 @@ class KNNNetworkAttackClassifier:
         Returns:
             np.ndarray: The KNN classifier predictions.
         """
-        return self.best_clf.predict_proba(cp.asarray(X_test)).get()
+        return self.best_clf.predict_proba(X_test)
