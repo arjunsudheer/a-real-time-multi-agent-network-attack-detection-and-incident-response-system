@@ -501,6 +501,11 @@ if __name__ == "__main__":
                         continue
 
                     # Generate mitigation commands based on detected attack
+                    GREEN = '\033[92m'
+                    BOLD = '\033[1m'
+                    RESET = '\033[0m'
+                    
+                    print(f"\n{GREEN}{BOLD}🛡️  SECURITY RESPONSE ACTIVATED{RESET}")
                     logging.info("Generating mitigation commands...")
                     mitigation_commands = (
                         nas.response_agent.generate_mitigation_commands(
@@ -515,6 +520,8 @@ if __name__ == "__main__":
                         summary = nas.response_agent.get_mitigation_summary(
                             mitigation_commands
                         )
+                        print(f"{GREEN}📋 Mitigation Summary:{RESET}")
+                        print(f"{GREEN}{summary}{RESET}")
                         logging.info(f"Mitigation Summary:\n{summary}")
 
                         # Execute the mitigation commands
@@ -523,19 +530,23 @@ if __name__ == "__main__":
                                 mitigation_commands
                             )
                         )
+                        print(f"{GREEN}✅ Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully{RESET}")
                         logging.info(
                             f"Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully"
                         )
 
                         if execution_results["failed_commands"]:
+                            RED = '\033[91m'
+                            print(f"{RED}⚠️  Failed to execute {len(execution_results['failed_commands'])} commands{RESET}")
                             logging.warning(
                                 f"Failed to execute {len(execution_results['failed_commands'])} commands"
                             )
                     else:
+                        print(f"{GREEN}ℹ️  No mitigation commands generated for this attack{RESET}")
                         logging.info("No mitigation commands generated for this attack")
 
-                    # Generate reports
-                    rpg = ReportPageGeneration()
+                    # Generate reports using the same response agent instance
+                    rpg = ReportPageGeneration(response_agent=nas.response_agent)
                     rpg.generate_report(
                         live_sample, classifier_prediction=classification_results
                     )

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from typing import List
 
 from agents.recommendation_agent import RecommendationAgent
+from agents.response_agent import ResponseAgent
 
 from agents.llm_tools import safe_arxiv_retrieve_tool, safe_cve_search_tool
 
@@ -42,7 +43,7 @@ class SecurityAnalysis(BaseModel):
 
 
 class ReportPageGeneration:
-    def __init__(self):
+    def __init__(self, response_agent: ResponseAgent = None):
         self.base_dir = Path(os.path.dirname(os.path.abspath(__file__)))
         self.templates_dir = self.base_dir / "templates"
         self.reports_dir = self.base_dir / "reports"
@@ -63,6 +64,8 @@ class ReportPageGeneration:
         self.jinja_env.filters["format_datetime"] = format_datetime
 
         self.ra = RecommendationAgent()
+        # Use provided response_agent or create a new one
+        self.response_agent = response_agent if response_agent is not None else ResponseAgent()
 
     def __copy_static_files(self):
         tailwind_css = """
@@ -122,6 +125,22 @@ class ReportPageGeneration:
             }
 
             sample_info.update(parse_classifier_results(classifier_prediction))
+
+            # Add topology data to sample info
+            try:
+                topology_data = self.response_agent.get_topology_for_ui()
+                sample_info["topology"] = topology_data
+                print(f"Added topology data with {topology_data['stats']['total_nodes']} nodes")
+            except Exception as e:
+                print(f"Error getting topology data: {str(e)}")
+                # Provide fallback topology data
+                sample_info["topology"] = {
+                    "nodes": [],
+                    "links": [],
+                    "stats": {"total_nodes": 0, "total_links": 0, "blocked_hosts": 0, "applied_commands": 0},
+                    "mitigation_summary": "No topology data available",
+                    "last_updated": datetime.now().isoformat()
+                }
 
             # traffic_type = sample_info["traffic_type"] -- During inference, there is no "Label" column
             if isinstance(classifier_prediction, dict):

@@ -1,0 +1,168 @@
+{
+  "nodes": [
+    {
+      "id": "switch_1",
+      "type": "switch",
+      "label": "s1",
+      "status": "active",
+      "ip_address": null,
+      "dpid": 1,
+      "port_count": 3,
+      "flow_count": 2,
+      "blocking_commands": []
+    },
+    {
+      "id": "switch_3",
+      "type": "switch",
+      "label": "s3",
+      "status": "active",
+      "ip_address": null,
+      "dpid": 3,
+      "port_count": 3,
+      "flow_count": 1,
+      "blocking_commands": []
+    },
+    {
+      "id": "switch_2",
+      "type": "switch",
+      "label": "s2",
+      "status": "active",
+      "ip_address": null,
+      "dpid": 2,
+      "port_count": 4,
+      "flow_count": 1,
+      "blocking_commands": []
+    },
+    {
+      "id": "host_h1",
+      "type": "host",
+      "label": "h1 (10.0.0.1)",
+      "status": "blocked",
+      "ip_address": "10.0.0.1",
+      "dpid": null,
+      "port_count": 0,
+      "flow_count": 0,
+      "blocking_commands": [
+        "curl -X POST http://localhost:8080/stats/flowentry/add -d '{\"dpid\": 1, \"priority\": 200, \"match\": {\"eth_type\": 2048, \"ip_proto\": 6, \"tcp_dst\": 80, \"ipv4_src\": \"10.0.0.1\"}, \"actions\": []}'"
+      ]
+    },
+    {
+      "id": "host_h2",
+      "type": "host",
+      "label": "h2 (10.0.0.2)",
+      "status": "active",
+      "ip_address": "10.0.0.2",
+      "dpid": null,
+      "port_count": 0,
+      "flow_count": 0,
+      "blocking_commands": []
+    },
+    {
+      "id": "host_h3",
+      "type": "host",
+      "label": "h3 (10.0.0.3)",
+      "status": "active",
+      "ip_address": "10.0.0.3",
+      "dpid": null,
+      "port_count": 0,
+      "flow_count": 0,
+      "blocking_commands": []
+    },
+    {
+      "id": "host_h4",
+      "type": "host",
+      "label": "h4 (10.0.0.4)",
+      "status": "active",
+      "ip_address": "10.0.0.4",
+      "dpid": null,
+      "port_count": 0,
+      "flow_count": 0,
+      "blocking_commands": []
+    },
+    {
+      "id": "host_h5",
+      "type": "host",
+      "label": "h5 (10.0.0.5)",
+      "status": "active",
+      "ip_address": "10.0.0.5",
+      "dpid": null,
+      "port_count": 0,
+      "flow_count": 0,
+      "blocking_commands": []
+    }
+  ],
+  "links": [
+    {
+      "id": "link_1_3",
+      "source": "switch_1",
+      "target": "switch_3",
+      "source_port": null,
+      "target_port": null,
+      "status": "active",
+      "bandwidth": null
+    },
+    {
+      "id": "link_1_2",
+      "source": "switch_1",
+      "target": "switch_2",
+      "source_port": null,
+      "target_port": null,
+      "status": "active",
+      "bandwidth": null
+    },
+    {
+      "id": "link_host_h1",
+      "source": "host_h1",
+      "target": "switch_1",
+      "source_port": null,
+      "target_port": null,
+      "status": "blocked",
+      "bandwidth": null
+    },
+    {
+      "id": "link_host_h2",
+      "source": "host_h2",
+      "target": "switch_1",
+      "source_port": null,
+      "target_port": null,
+      "status": "active",
+      "bandwidth": null
+    },
+    {
+      "id": "link_host_h3",
+      "source": "host_h3",
+      "target": "switch_1",
+      "source_port": null,
+      "target_port": null,
+      "status": "active",
+      "bandwidth": null
+    },
+    {
+      "id": "link_host_h4",
+      "source": "host_h4",
+      "target": "switch_1",
+      "source_port": null,
+      "target_port": null,
+      "status": "active",
+      "bandwidth": null
+    },
+    {
+      "id": "link_host_h5",
+      "source": "host_h5",
+      "target": "switch_1",
+      "source_port": null,
+      "target_port": null,
+      "status": "active",
+      "bandwidth": null
+    }
+  ],
+  "blocked_flows": [],
+  "mitigation_summary": "Applied 1 mitigation commands. Blocked hosts: 10.0.0.1",
+  "last_updated": "2025-06-15T00:55:37.587602",
+  "stats": {
+    "total_nodes": 8,
+    "total_links": 7,
+    "blocked_hosts": 1,
+    "applied_commands": 1
+  }
+}
