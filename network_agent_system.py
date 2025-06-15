@@ -501,10 +501,10 @@ if __name__ == "__main__":
                         continue
 
                     # Generate mitigation commands based on detected attack
-                    GREEN = '\033[92m'
-                    BOLD = '\033[1m'
-                    RESET = '\033[0m'
-                    
+                    GREEN = "\033[92m"
+                    BOLD = "\033[1m"
+                    RESET = "\033[0m"
+
                     print(f"\n{GREEN}{BOLD}🛡️  SECURITY RESPONSE ACTIVATED{RESET}")
                     logging.info("Generating mitigation commands...")
                     mitigation_commands = (
@@ -530,19 +530,25 @@ if __name__ == "__main__":
                                 mitigation_commands
                             )
                         )
-                        print(f"{GREEN}✅ Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully{RESET}")
+                        print(
+                            f"{GREEN}✅ Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully{RESET}"
+                        )
                         logging.info(
                             f"Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully"
                         )
 
                         if execution_results["failed_commands"]:
-                            RED = '\033[91m'
-                            print(f"{RED}⚠️  Failed to execute {len(execution_results['failed_commands'])} commands{RESET}")
+                            RED = "\033[91m"
+                            print(
+                                f"{RED}⚠️  Failed to execute {len(execution_results['failed_commands'])} commands{RESET}"
+                            )
                             logging.warning(
                                 f"Failed to execute {len(execution_results['failed_commands'])} commands"
                             )
                     else:
-                        print(f"{GREEN}ℹ️  No mitigation commands generated for this attack{RESET}")
+                        print(
+                            f"{GREEN}ℹ️  No mitigation commands generated for this attack{RESET}"
+                        )
                         logging.info("No mitigation commands generated for this attack")
 
                     # Generate reports using the same response agent instance

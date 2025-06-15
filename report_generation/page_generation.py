@@ -65,7 +65,9 @@ class ReportPageGeneration:
 
         self.ra = RecommendationAgent()
         # Use provided response_agent or create a new one
-        self.response_agent = response_agent if response_agent is not None else ResponseAgent()
+        self.response_agent = (
+            response_agent if response_agent is not None else ResponseAgent()
+        )
 
     def __copy_static_files(self):
         tailwind_css = """
@@ -130,16 +132,23 @@ class ReportPageGeneration:
             try:
                 topology_data = self.response_agent.get_topology_for_ui()
                 sample_info["topology"] = topology_data
-                print(f"Added topology data with {topology_data['stats']['total_nodes']} nodes")
+                print(
+                    f"Added topology data with {topology_data['stats']['total_nodes']} nodes"
+                )
             except Exception as e:
                 print(f"Error getting topology data: {str(e)}")
                 # Provide fallback topology data
                 sample_info["topology"] = {
                     "nodes": [],
                     "links": [],
-                    "stats": {"total_nodes": 0, "total_links": 0, "blocked_hosts": 0, "applied_commands": 0},
+                    "stats": {
+                        "total_nodes": 0,
+                        "total_links": 0,
+                        "blocked_hosts": 0,
+                        "applied_commands": 0,
+                    },
                     "mitigation_summary": "No topology data available",
-                    "last_updated": datetime.now().isoformat()
+                    "last_updated": datetime.now().isoformat(),
                 }
 
             # traffic_type = sample_info["traffic_type"] -- During inference, there is no "Label" column
@@ -147,6 +156,9 @@ class ReportPageGeneration:
                 traffic_type = classifier_prediction["final_prediction"]
             else:
                 traffic_type = classifier_prediction
+
+            # Add traffic_type to sample_info so it's available in the template
+            sample_info["traffic_type"] = traffic_type
             try:
                 if traffic_type.lower() == "icmp flood":
                     query = 'cat:cs.CR AND (ti:"DDoS" OR ti:"denial of service" OR abs:"ICMP flood")'

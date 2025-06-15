@@ -49,10 +49,11 @@
                             {% for cve in sample.cves[:3] %}
                             <a href="{{ cve.url }}" target="_blank" class="hover:opacity-75">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                    {% if cve.severity == 'CRITICAL' %}bg-red-100 text-red-800
-                                    {% elif cve.severity == 'HIGH' %}bg-orange-100 text-orange-800
-                                    {% elif cve.severity == 'MEDIUM' %}bg-yellow-100 text-yellow-800
-                                    {% else %}bg-green-100 text-green-800{% endif %}">
+                                    {% if cve.severity == 'CRITICAL' %}bg-red-600 text-white
+                                    {% elif cve.severity == 'HIGH' %}bg-orange-500 text-white
+                                    {% elif cve.severity == 'MEDIUM' %}bg-amber-500 text-white
+                                    {% elif cve.severity == 'LOW' %}bg-blue-500 text-white
+                                    {% else %}bg-gray-500 text-white{% endif %}">
                                     {{ cve.id }}
                                     <i class="fas fa-external-link-alt text-xs ml-1"></i>
                                 </span>
