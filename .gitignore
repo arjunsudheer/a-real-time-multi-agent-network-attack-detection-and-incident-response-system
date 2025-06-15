@@ -8,3 +8,5 @@ datasets
 report_generation/reports
 
 live_sample.csv
+experiments/results
+datasets.zip

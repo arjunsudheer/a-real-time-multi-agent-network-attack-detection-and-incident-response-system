@@ -217,7 +217,7 @@ class ReportPageGeneration:
 
         server = start_http_server(port)
 
-        url = f"http://localhost:{port}/index.html"
+        url = f"http://0.0.0.0:{port}/index.html"
         print(f"\nStarting report server at {url}")
         webbrowser.open(url)
 
