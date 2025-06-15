@@ -1,0 +1,27 @@
+version: '3.8'
+services:
+  ryu-manager:
+    build: ./ryu-manager
+    container_name: ryu-manager
+    expose:
+      - "8080"
+
+  mininet:
+    image: iwaseyusuke/mininet
+    container_name: mininet
+    privileged: true
+    network_mode: host
+    environment:
+      - ryu_ip=127.0.0.1
+    command: mn --controller=remote,ip=${ryu_ip} --topo=linear,3 --mac
+
+  agent:
+    build: ./agent
+    container_name: agent
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["python", "network_agent_system.py"]
+    depends_on:
+      - ryu-manager
+      - mininet
