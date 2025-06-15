@@ -2,7 +2,7 @@
 import requests
 import logging
 import pandas as pd
-from .flow_to_feature_dict import (
+from ryu_adapter.flow_to_feature_dict import (
     ryu_flow_to_feature_dict,
     ORDERED_FEATURE_NAMES,
 )
@@ -34,14 +34,13 @@ def get_live_feature_vectors_from_ryu(dpid=1) -> pd.DataFrame:
     feature_vectors = []
     valid_flows = 0
 
-
     for ryu_flow in ryu_flows:
         match = ryu_flow.get("match", {})
 
         # Filter for flows with identifiable IP-level features
         if not any(k in match for k in ["ipv4_src", "nw_src"]):
-            print('No match')
-            # continue
+            print("No match")
+            continue
 
         try:
             feature_dict = ryu_flow_to_feature_dict(ryu_flow)
