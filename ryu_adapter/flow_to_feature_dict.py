@@ -53,10 +53,13 @@ def ryu_flow_to_feature_dict(ryu_flow: dict) -> dict:
         logging.debug(f"Could not parse destination IP '{ipv4_dst}': {e}")
         features['Dst IP'] = '0.0.0.0'  # Default if IP is invalid or missing
 
-    # --- Port and Protocol (remain float) ---
-    features["Src Port"] = float(tcp_src or udp_src or 0)
-    features["Dst Port"] = float(tcp_dst or udp_dst or 0)
-    features["Protocol"] = float(ip_proto or 0)
+    # --- Port logic ---
+    if features["Protocol"] == 1.0:  # ICMP protocol number
+        features["Src Port"] = 0.0
+        features["Dst Port"] = 0.0
+    else:
+        features["Src Port"] = float(tcp_src or udp_src or 0)
+        features["Dst Port"] = float(tcp_dst or udp_dst or 0)
 
     # --- Timestamp Formatting ---
     try:
