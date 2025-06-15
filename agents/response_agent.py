@@ -145,7 +145,7 @@ class ResponseAgent:
         """
         llm = GoogleGenerativeAI(
             model="gemini-2.0-flash",
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            google_api_key=os.getenv("GOOGLE_API_KEY", "AIzaSyC72eGdAEHU9ZBAhXJWAg6b8fCQSRmgDBU"),
             temperature=0.3,
         )
 
