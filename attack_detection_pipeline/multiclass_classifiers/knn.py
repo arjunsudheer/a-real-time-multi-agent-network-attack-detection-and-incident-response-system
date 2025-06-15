@@ -21,8 +21,8 @@ class KNNNetworkAttackClassifier:
             y_train (np.ndarray): The train labels.
             dataset_directory (Path): The parent directory to store the classifier weights.
         """
-        self.X_train = X_train
-        self.y_train = y_train
+        self.X_train = np.asarray(X_train)
+        self.y_train = np.asarray(y_train)
         self.dataset_directory = dataset_directory
 
         # Load an already trained classifier model if it exists
@@ -63,7 +63,7 @@ class KNNNetworkAttackClassifier:
             )
 
             # Compute cross-validated F1-score (weighted)
-            cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
             scores = cross_val_score(
                 clf,
                 self.X_train,
@@ -99,7 +99,7 @@ class KNNNetworkAttackClassifier:
         Returns:
             np.ndarray: The KNN classifier predictions.
         """
-        return self.best_clf.predict(X_test)
+        return self.best_clf.predict(np.asarray(X_test))
 
     def predict_network_attack_class_probabilities(
         self, X_test: pd.DataFrame
@@ -113,4 +113,4 @@ class KNNNetworkAttackClassifier:
         Returns:
             np.ndarray: The KNN classifier predictions.
         """
-        return self.best_clf.predict_proba(X_test)
+        return self.best_clf.predict_proba(np.asarray(X_test))

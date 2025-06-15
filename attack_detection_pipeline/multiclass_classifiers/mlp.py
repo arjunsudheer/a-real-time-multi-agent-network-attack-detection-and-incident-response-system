@@ -72,7 +72,8 @@ class MLPNetworkAttackClassifier:
             self.best_clf.load_state_dict(
                 torch.load(
                     Path(f"{self.dataset_directory}/saved_classifier_models")
-                    / "mlp_trained.pt"
+                    / "mlp_trained.pt",
+                    map_location=self.device
                 )
             )
         else:
