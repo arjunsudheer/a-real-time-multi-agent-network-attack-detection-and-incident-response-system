@@ -31,7 +31,7 @@ arxiv_retriever = ArxivRetriever(
 def safe_web_search(query: str) -> str:
     """
     safe_web_search uses the Brave Search API to perform a web search.
-    
+
     Uses direct HTTP requests to Brave Search API.
     Works best with short queries, ideally under 20 words.
     Free tier provides 2000 searches per month.
@@ -45,7 +45,7 @@ def safe_web_search(query: str) -> str:
         str: The result of the web search.
     """
     global _last_search_time
-    
+
     try:
         # Rate limiting: ensure at least 1 second between requests
         current_time = time.time()
@@ -53,7 +53,7 @@ def safe_web_search(query: str) -> str:
         if time_since_last_request < 1.0:
             sleep_time = 1.0 - time_since_last_request
             time.sleep(sleep_time)
-        
+
         _last_search_time = time.time()
         # Get API key from environment or use fallback
         api_key = os.getenv("BRAVE_API_KEY")
@@ -65,7 +65,7 @@ def safe_web_search(query: str) -> str:
         headers = {
             "Accept": "application/json",
             "Accept-Encoding": "gzip",
-            "X-Subscription-Token": api_key
+            "X-Subscription-Token": api_key,
         }
 
         params = {
@@ -74,33 +74,35 @@ def safe_web_search(query: str) -> str:
             "text_decorations": False,
             "search_lang": "en",
             "country": "US",
-            "safesearch": "moderate"
+            "safesearch": "moderate",
         }
 
         print(f"Brave Search - Making request to: {url}")
         print(f"Brave Search - Query: {query}")
         print(f"Brave Search - Using API key: {api_key[:10]}...")
-        
+
         response = requests.get(url, headers=headers, params=params, timeout=10)
-        
+
         print(f"Brave Search - Response status: {response.status_code}")
-        
+
         if response.status_code == 200:
             data = response.json()
             print(f"Brave Search - Response keys: {list(data.keys())}")
-            
+
             results = []
 
             if "web" in data and "results" in data["web"]:
                 web_results = data["web"]["results"]
                 print(f"Brave Search - Found {len(web_results)} web results")
-                
+
                 for result in web_results:
                     title = result.get("title", "")
                     url = result.get("url", "")
                     description = result.get("description", "")
 
-                    formatted_result = f"Title: {title}\nURL: {url}\nDescription: {description}\n"
+                    formatted_result = (
+                        f"Title: {title}\nURL: {url}\nDescription: {description}\n"
+                    )
                     results.append(formatted_result)
             else:
                 print(f"Brave Search - No 'web' results found in response")
@@ -115,7 +117,9 @@ def safe_web_search(query: str) -> str:
 
         elif response.status_code == 429:
             print(f"Brave Search - Rate limit exceeded")
-            return "ERROR: Brave Search API rate limit exceeded. Please try again later."
+            return (
+                "ERROR: Brave Search API rate limit exceeded. Please try again later."
+            )
         elif response.status_code == 401:
             print(f"Brave Search - Invalid API key")
             try:
@@ -131,7 +135,9 @@ def safe_web_search(query: str) -> str:
                 print(f"Brave Search - Error response: {error_data}")
             except:
                 print(f"Brave Search - Error response text: {response.text}")
-            return f"ERROR: Brave Search API returned status code {response.status_code}"
+            return (
+                f"ERROR: Brave Search API returned status code {response.status_code}"
+            )
 
     except Exception as e:
         return f"ERROR: Brave Search failed: {str(e)}"

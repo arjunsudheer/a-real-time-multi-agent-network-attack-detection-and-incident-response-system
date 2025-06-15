@@ -8,56 +8,60 @@ def parse_classifier_results(results):
     # Handle detailed results structure from network_agent_system.py
     if isinstance(results, dict) and "pre_detection" in results:
         classifiers = []
-        
+
         # Add pre-detection classifier
         pre_det = results["pre_detection"]
-        classifiers.append({
-            "name": "Pre-Detection",
-            "prediction": pre_det["prediction"],
-            "confidence": pre_det["confidence"]
-        })
-        
+        classifiers.append(
+            {
+                "name": "Pre-Detection",
+                "prediction": pre_det["prediction"],
+                "confidence": pre_det["confidence"],
+            }
+        )
+
         # Add post-classification classifiers if available
-        if "post_classification" in results and results["post_classification"]["classifiers"]:
+        if (
+            "post_classification" in results
+            and results["post_classification"]["classifiers"]
+        ):
             for clf in results["post_classification"]["classifiers"]:
-                classifiers.append({
-                    "name": clf["name"],
-                    "prediction": clf["prediction"],
-                    "confidence": clf["confidence"]
-                })
-            
+                classifiers.append(
+                    {
+                        "name": clf["name"],
+                        "prediction": clf["prediction"],
+                        "confidence": clf["confidence"],
+                    }
+                )
+
             # Use real majority vote results
             majority_vote = results["post_classification"]["majority_vote"]
         else:
             # If no post-classification, use pre-detection as majority vote
             majority_vote = {
                 "prediction": pre_det["prediction"],
-                "agreement_ratio": 100.0
+                "agreement_ratio": 100.0,
             }
-        
+
         # Add LLM classifier if it was used
         if results.get("used_llm", False):
-            classifiers.append({
-                "name": "LLM Agent",
-                "prediction": results["final_prediction"],
-                "confidence": 88.0
-            })
-        
+            classifiers.append(
+                {
+                    "name": "LLM Agent",
+                    "prediction": results["final_prediction"],
+                    "confidence": 88.0,
+                }
+            )
+
         return {"classifiers": classifiers, "majority_vote": majority_vote}
-    
+
     # Fallback for simple string format
     prediction = results.strip() if isinstance(results, str) else str(results).strip()
-    
-    classifiers = [{
-        "name": "Network Agent System",
-        "prediction": prediction,
-        "confidence": 95.0
-    }]
-    
-    majority_vote = {
-        "prediction": prediction,
-        "agreement_ratio": 100.0
-    }
+
+    classifiers = [
+        {"name": "Network Agent System", "prediction": prediction, "confidence": 95.0}
+    ]
+
+    majority_vote = {"prediction": prediction, "agreement_ratio": 100.0}
 
     return {"classifiers": classifiers, "majority_vote": majority_vote}
 
@@ -80,7 +84,7 @@ def parse_arxiv_results(documents):
         for doc in documents:
             try:
                 # Check if doc has metadata attribute
-                if not hasattr(doc, 'metadata'):
+                if not hasattr(doc, "metadata"):
                     print(f"- Document missing metadata attribute: {type(doc)}")
                     continue
 
@@ -92,12 +96,16 @@ def parse_arxiv_results(documents):
                 authors = metadata.get("Authors", "Unknown Authors")
                 entry_id = metadata.get("Entry ID", "")
                 published = metadata.get("Published", None)
-                
+
                 # Handle arxiv_id extraction safely
                 arxiv_id = entry_id.split("/")[-1] if entry_id else "unknown"
-                
+
                 # Handle published date safely
-                published_str = published.isoformat() if published and hasattr(published, 'isoformat') else str(published) if published else "Unknown"
+                published_str = (
+                    published.isoformat()
+                    if published and hasattr(published, "isoformat")
+                    else str(published) if published else "Unknown"
+                )
 
                 paper = {
                     "title": title,
@@ -105,7 +113,7 @@ def parse_arxiv_results(documents):
                     "arxiv_id": arxiv_id,
                     "url": entry_id,
                     "published": published_str,
-                    "summary": getattr(doc, 'page_content', 'No summary available'),
+                    "summary": getattr(doc, "page_content", "No summary available"),
                 }
 
                 papers.append(paper)

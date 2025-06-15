@@ -14,9 +14,12 @@ import torch
 # For relevance scoring with nomic-embed-text
 try:
     import ollama
+
     ollama_available = True
 except ImportError:
-    print("Ollama is not installed. Relevance scoring with nomic-embed-text will be skipped.")
+    print(
+        "Ollama is not installed. Relevance scoring with nomic-embed-text will be skipped."
+    )
     ollama = None
     ollama_available = False
 
@@ -34,22 +37,26 @@ model = AutoModelForSequenceClassification.from_pretrained(model_name)
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 model = model.to(device)
 
+
 def clean_for_relevance(text):
     if not text:
         return ""
     # Remove non-ASCII characters (emojis, etc.)
     text = text.encode("ascii", "ignore").decode()
     # Remove non-alphanumeric except basic punctuation
-    text = re.sub(r'[^\w\s.,:;!?-]', '', text)
+    text = re.sub(r"[^\w\s.,:;!?-]", "", text)
     # Try to extract the main prediction after 'Final Prediction:'
-    match = re.search(r'Final Prediction:\s*([^\n]+)', text)
+    match = re.search(r"Final Prediction:\s*([^\n]+)", text)
     if match:
         return match.group(1).strip()
     # Fallback: return the first sentence or first 200 chars
-    return text.strip().split('\n')[0][:200]
+    return text.strip().split("\n")[0][:200]
+
 
 def compute_nli_faithfulness(premise, hypothesis):
-    inputs = tokenizer(premise, hypothesis, truncation=True, return_tensors="pt").to(device)
+    inputs = tokenizer(premise, hypothesis, truncation=True, return_tensors="pt").to(
+        device
+    )
     with torch.no_grad():
         logits = model(**inputs).logits
     # Label mapping: 0=entailment, 1=neutral, 2=contradiction
@@ -57,17 +64,26 @@ def compute_nli_faithfulness(premise, hypothesis):
     entailment_prob = float(probs[0])  # Faithfulness = entailment probability
     return entailment_prob
 
+
 def compute_relevance(query, output):
     if not ollama_available or not query or not output:
         return None
     try:
-        emb_query = np.array(ollama.embeddings(model='nomic-embed-text', prompt=str(query))['embedding'])
-        emb_output = np.array(ollama.embeddings(model='nomic-embed-text', prompt=str(output))['embedding'])
-        score = float(np.dot(emb_query, emb_output) / (np.linalg.norm(emb_query) * np.linalg.norm(emb_output)))
+        emb_query = np.array(
+            ollama.embeddings(model="nomic-embed-text", prompt=str(query))["embedding"]
+        )
+        emb_output = np.array(
+            ollama.embeddings(model="nomic-embed-text", prompt=str(output))["embedding"]
+        )
+        score = float(
+            np.dot(emb_query, emb_output)
+            / (np.linalg.norm(emb_query) * np.linalg.norm(emb_output))
+        )
         return score
     except Exception as e:
         print(f"Ollama relevance error: {e}")
         return None
+
 
 def main():
     # Load a random sample (1%) from test.csv
@@ -118,5 +134,6 @@ def main():
     results_df.to_csv(RESULTS_PATH, index=False)
     print(f"Saved LLM metrics results to {RESULTS_PATH}")
 
+
 if __name__ == "__main__":
-    main() 
+    main()

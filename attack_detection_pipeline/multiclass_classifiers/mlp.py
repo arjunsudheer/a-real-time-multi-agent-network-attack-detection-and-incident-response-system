@@ -73,7 +73,7 @@ class MLPNetworkAttackClassifier:
                 torch.load(
                     Path(f"{self.dataset_directory}/saved_classifier_models")
                     / "mlp_trained.pt",
-                    map_location=self.device
+                    map_location=self.device,
                 )
             )
         else:

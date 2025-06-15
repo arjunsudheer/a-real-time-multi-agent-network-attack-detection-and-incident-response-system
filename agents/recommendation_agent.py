@@ -35,7 +35,7 @@ class SecurityProduct(BaseModel):
     )
     url: str = Field(
         description="Official website or product page URL",
-        default="https://www.google.com/search?q="
+        default="https://www.google.com/search?q=",
     )
     relevance_score: float = Field(
         description="Score (0-10) indicating relevance to the security need",
@@ -137,13 +137,13 @@ class RecommendationAgent:
                 search_terms = [
                     f"cybersecurity products {attack_type} protection",
                     f"network security solutions enterprise",
-                    f"intrusion detection prevention systems"
+                    f"intrusion detection prevention systems",
                 ]
             else:
                 search_terms = [
                     f"cybersecurity products {search_query}",
                     f"enterprise security solutions",
-                    f"network security vendors comparison"
+                    f"network security vendors comparison",
                 ]
 
             all_results = []
@@ -163,7 +163,7 @@ class RecommendationAgent:
 
             # Parse search results to extract URLs directly
             url_mapping = self._extract_urls_from_search_results(all_results)
-            
+
             combined_results = "\n\n".join(all_results)
 
             prompt = f"""Extract the top security products/solutions from this text. Focus on enterprise-grade security solutions.
@@ -206,7 +206,7 @@ class RecommendationAgent:
                         product_name = product_data["name"]
                         # Find matching URL from search results
                         product_url = self._find_matching_url(product_name, url_mapping)
-                        
+
                         product = SecurityProduct(
                             name=product_name,
                             type=product_data["type"],
@@ -241,32 +241,35 @@ class RecommendationAgent:
                         type="DDoS Protection",
                         description="Cloud-based DDoS protection service that mitigates large-scale distributed denial-of-service attacks at the network edge.",
                         url="https://www.cloudflare.com/ddos/",
-                        relevance_score=9.2
+                        relevance_score=9.2,
                     ),
                     SecurityProduct(
                         name="AWS Shield Advanced",
-                        type="DDoS Protection", 
+                        type="DDoS Protection",
                         description="Managed DDoS protection service that safeguards applications running on AWS against larger and more sophisticated attacks.",
                         url="https://aws.amazon.com/shield/",
-                        relevance_score=8.8
-                    )
+                        relevance_score=8.8,
+                    ),
                 ]
-            elif "dictionary" in search_query.lower() or "brute force" in search_query.lower():
+            elif (
+                "dictionary" in search_query.lower()
+                or "brute force" in search_query.lower()
+            ):
                 return [
                     SecurityProduct(
                         name="Fail2ban",
                         type="Intrusion Prevention",
                         description="Log-parsing application that protects Linux and Unix servers from brute-force attacks by monitoring log files and blocking suspicious IP addresses.",
                         url="https://github.com/fail2ban/fail2ban",
-                        relevance_score=8.5
+                        relevance_score=8.5,
                     ),
                     SecurityProduct(
                         name="CrowdStrike Falcon",
                         type="Endpoint Protection",
                         description="Cloud-native endpoint protection platform with advanced threat detection and response capabilities including brute force attack prevention.",
                         url="https://www.crowdstrike.com/en-us/platform/",
-                        relevance_score=9.0
-                    )
+                        relevance_score=9.0,
+                    ),
                 ]
             else:
                 # Generic network security products
@@ -276,22 +279,22 @@ class RecommendationAgent:
                         type="Network Security",
                         description="Enterprise-grade firewall with advanced threat prevention, intrusion detection, and application-level security features.",
                         url="https://www.paloaltonetworks.com/",
-                        relevance_score=9.3
+                        relevance_score=9.3,
                     ),
                     SecurityProduct(
                         name="Snort IDS/IPS",
                         type="Intrusion Detection/Prevention",
                         description="Open source network intrusion detection and prevention system capable of performing real-time traffic analysis and packet logging.",
                         url="https://www.snort.org/",
-                        relevance_score=8.7
+                        relevance_score=8.7,
                     ),
                     SecurityProduct(
                         name="Splunk Enterprise Security",
                         type="SIEM",
                         description="Security information and event management platform that provides real-time monitoring, advanced analytics, and incident response capabilities.",
                         url="https://www.splunk.com/en_us/products/enterprise-security.html",
-                        relevance_score=8.9
-                    )
+                        relevance_score=8.9,
+                    ),
                 ]
         except Exception as e:
             print(f"Error in fallback products: {str(e)}")
@@ -300,46 +303,48 @@ class RecommendationAgent:
     def _extract_urls_from_search_results(self, search_results_list):
         """Extract URLs and titles from search results"""
         url_mapping = {}
-        
+
         for search_results in search_results_list:
             # Parse individual results from the formatted search string
             results = search_results.split("\n\n")
-            
+
             for result in results:
                 if result.strip():
                     lines = result.strip().split("\n")
                     title = ""
                     url = ""
-                    
+
                     for line in lines:
                         if line.startswith("Title: "):
                             title = line.replace("Title: ", "").strip()
                         elif line.startswith("URL: "):
                             url = line.replace("URL: ", "").strip()
-                    
+
                     if title and url:
                         url_mapping[title.lower()] = url
-        
+
         print(f"Extracted {len(url_mapping)} URLs from search results")
         return url_mapping
 
     def _find_matching_url(self, product_name, url_mapping):
         """Find the best matching URL for a product name"""
         product_name_lower = product_name.lower()
-        
+
         # Try exact match first
         if product_name_lower in url_mapping:
             return url_mapping[product_name_lower]
-        
+
         # Try partial matches
         for title, url in url_mapping.items():
             # Check if product name is contained in the title
-            if any(word in title for word in product_name_lower.split() if len(word) > 3):
+            if any(
+                word in title for word in product_name_lower.split() if len(word) > 3
+            ):
                 return url
-            
+
             # Check if title contains the product name
             if product_name_lower.replace(" ", "") in title.replace(" ", ""):
                 return url
-        
+
         # Fallback to Google search
         return f"https://www.google.com/search?q={product_name.replace(' ', '+')}"

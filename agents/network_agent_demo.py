@@ -523,7 +523,7 @@ class IDSAgent:
         try:
             base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
-            #api_key = os.getenv("NVD_API_KEY")
+            # api_key = os.getenv("NVD_API_KEY")
             api_key = "ea20866b-6e87-46aa-a1d2-1d4a7bdede0"
 
             clean_query = re.sub(r"[^\w\s-]", "", query)
@@ -539,12 +539,12 @@ class IDSAgent:
             params = {
                 "keywordSearch": keyword_search,
                 "resultsPerPage": 10,
-                "startIndex": 0
+                "startIndex": 0,
             }
 
             headers = {
                 "User-Agent": "IDS-Analysis-Tool/1.0",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             if api_key:
                 headers["apiKey"] = api_key
@@ -552,15 +552,12 @@ class IDSAgent:
             print(f"\nSearching CVEs with query: {keyword_search}")
 
             response = requests.get(
-                base_url, 
-                params=params, 
-                headers=headers, 
-                timeout=10
+                base_url, params=params, headers=headers, timeout=10
             )
 
             if response.status_code == 200:
                 data = response.json()
-                
+
                 total_results = data.get("totalResults", 0)
                 if total_results == 0:
                     print(f"No CVEs found for query: {keyword_search}")
@@ -571,7 +568,7 @@ class IDSAgent:
 
                 for vuln in vulnerabilities[:5]:
                     cve_data = vuln.get("cve", {})
-                    
+
                     cve_id = cve_data.get("id")
                     if not cve_id or not re.match(r"^CVE-\d{4}-\d{4,7}$", cve_id):
                         continue
@@ -602,8 +599,12 @@ class IDSAgent:
 
                     descriptions = cve_data.get("descriptions", [])
                     description = next(
-                        (desc["value"] for desc in descriptions if desc.get("lang") == "en"),
-                        "No description available"
+                        (
+                            desc["value"]
+                            for desc in descriptions
+                            if desc.get("lang") == "en"
+                        ),
+                        "No description available",
                     )
 
                     cves.append(
@@ -612,7 +613,7 @@ class IDSAgent:
                             url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
                             severity=severity,
                             score=score,
-                            description=description
+                            description=description,
                         )
                     )
 
@@ -623,7 +624,9 @@ class IDSAgent:
                 if response.status_code == 403:
                     print("Access denied. API key may be required or invalid.")
                 elif response.status_code == 429:
-                    print("Rate limit exceeded. Consider using an API key or waiting before retrying.")
+                    print(
+                        "Rate limit exceeded. Consider using an API key or waiting before retrying."
+                    )
                 return self._get_alternative_vulnerability_data(query)
 
         except Exception as e:
@@ -1228,7 +1231,7 @@ if __name__ == "__main__":
 
     # New Way of getting live data from RYU+Mininet
     print("\nFetching live samples from Ryu for analysis...")
-    samples = agent.get_live_samples_from_ryu(num_samples_to_fetch=5) # Fetch 5 samples
+    samples = agent.get_live_samples_from_ryu(num_samples_to_fetch=5)  # Fetch 5 samples
 
     if not samples.empty:
         print("\n\n--- Live Samples Data (CSV Format) ---")
@@ -1239,7 +1242,7 @@ if __name__ == "__main__":
 
     print(f"\nAnalyzing {len(samples)} random samples...")
     if not samples.empty:
-        
+
         report_path = agent.generate_report(samples)
         print(f"\nReport generated at: {report_path}")
         agent.serve_reports()

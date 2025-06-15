@@ -1,10 +1,12 @@
 import os
+
 # Force PyTorch to use CPU instead of MPS to avoid segmentation fault
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 os.environ["TORCH_USE_CUDA_DSA"] = "1"
 
 # Disable MPS for sentence transformers
 import torch
+
 torch.backends.mps.is_built = lambda: False
 
 import numpy as np
@@ -17,6 +19,7 @@ import requests
 from sklearn.preprocessing import LabelEncoder
 from agents.feature_selection_agent import FeatureSelectionAgent
 from agents.labeling_agent import LabelingAgent
+from agents.response_agent import ResponseAgent
 from preprocessing.data_cleaning import (
     clean_data,
     clean_numeric_columns,
@@ -68,6 +71,9 @@ class NetworkAgentSystem:
         # if there is no labeling agent long-term memory built
         if not Path("agents/labeling_agent_long_term_memory").exists():
             self.__train_attack_detection_pipeline()
+
+        # Initialize the response agent for generating mitigation commands
+        self.response_agent = ResponseAgent()
 
     def __load_preprocessed_dataset(self):
         def load_dataset(name: str, as_numpy: bool = False):
@@ -290,9 +296,9 @@ class NetworkAgentSystem:
             "pre_detection": {"prediction": "Benign", "confidence": 0.0},
             "post_classification": {"classifiers": [], "majority_vote": {}},
             "final_prediction": "Benign",
-            "used_llm": False
+            "used_llm": False,
         }
-        
+
         # Pre-detection malicious sample filtering
         (
             malicious_preprocessed_sample_df,
@@ -302,12 +308,20 @@ class NetworkAgentSystem:
             preprocessed_samples=preprocessed_sample,
             original_samples=original_sample,
         )
-        
+
         # Get pre-detection prediction details
-        pre_detection_pred = self.pre_detection._PreDetection__get_classifier_predictions(preprocessed_sample)[0]
-        results["pre_detection"]["prediction"] = "Malicious" if pre_detection_pred == 1 else "Benign"
-        results["pre_detection"]["confidence"] = 90.0 if pre_detection_pred == 1 else 95.0
-        
+        pre_detection_pred = (
+            self.pre_detection._PreDetection__get_classifier_predictions(
+                preprocessed_sample
+            )[0]
+        )
+        results["pre_detection"]["prediction"] = (
+            "Malicious" if pre_detection_pred == 1 else "Benign"
+        )
+        results["pre_detection"]["confidence"] = (
+            90.0 if pre_detection_pred == 1 else 95.0
+        )
+
         # If there are no malicious indices, then the sample was benign
         if len(malicious_indices) == 0:
             results["final_prediction"] = "Benign"
@@ -322,33 +336,40 @@ class NetworkAgentSystem:
             preprocessed_malicious_samples=malicious_preprocessed_sample_df,
             original_malicious_samples=malicious_original_sample_df,
         )
-        
+
         # Get detailed post-classification results
         classifier_names = ["RFC", "XGB", "MLP", "KNN"]
         for i, clf_name in enumerate(classifier_names):
             clf_pred_idx = predictions[clf_name.lower()][0]
             clf_pred = le.inverse_transform([clf_pred_idx])[0]
-            results["post_classification"]["classifiers"].append({
-                "name": clf_name,
-                "prediction": clf_pred,
-                "confidence": 85.0 + (i * 2)  # Vary confidence slightly
-            })
-        
+            results["post_classification"]["classifiers"].append(
+                {
+                    "name": clf_name,
+                    "prediction": clf_pred,
+                    "confidence": 85.0 + (i * 2),  # Vary confidence slightly
+                }
+            )
+
         # Calculate majority vote
-        all_preds = [clf["prediction"] for clf in results["post_classification"]["classifiers"]]
+        all_preds = [
+            clf["prediction"] for clf in results["post_classification"]["classifiers"]
+        ]
         from collections import Counter
+
         vote_counts = Counter(all_preds)
         majority_pred = vote_counts.most_common(1)[0]
         agreement_ratio = majority_pred[1] / len(classifier_names) * 100
-        
+
         results["post_classification"]["majority_vote"] = {
             "prediction": majority_pred[0],
-            "agreement_ratio": agreement_ratio
+            "agreement_ratio": agreement_ratio,
         }
-        
+
         # If there are no low agreement indices, then an attack class was determined
         if len(low_agreement_indices) == 0:
-            results["final_prediction"] = le.inverse_transform(predictions["majority_predictions"])[0]
+            results["final_prediction"] = le.inverse_transform(
+                predictions["majority_predictions"]
+            )[0]
             return results
 
         # Prompt labeling agent to resolve the final class prediction for the low_agreement sample
@@ -366,6 +387,47 @@ class NetworkAgentSystem:
         results["final_prediction"] = prediction
         return results
 
+    def generate_and_execute_mitigation(
+        self,
+        classification_results: dict,
+        original_sample: pd.DataFrame,
+        dpid: int = 2,
+        execute: bool = True,
+    ) -> dict:
+        """
+        Generate and optionally execute mitigation commands for detected attacks
+
+        Args:
+            classification_results: Results from the attack detection pipeline
+            original_sample: Original network traffic sample
+            dpid: Datapath ID of the switch to configure
+            execute: Whether to execute the commands or just generate them
+
+        Returns:
+            Dictionary with generated commands and execution results
+        """
+        # Generate mitigation commands
+        mitigation_commands = self.response_agent.generate_mitigation_commands(
+            classification_results=classification_results,
+            original_sample=original_sample,
+            dpid=dpid,
+        )
+
+        result = {
+            "commands": mitigation_commands,
+            "summary": self.response_agent.get_mitigation_summary(mitigation_commands),
+            "execution_results": None,
+        }
+
+        # Execute commands if requested
+        if execute and mitigation_commands:
+            execution_results = self.response_agent.execute_mitigation_commands(
+                mitigation_commands
+            )
+            result["execution_results"] = execution_results
+
+        return result
+
 
 if __name__ == "__main__":
     logging.basicConfig(
@@ -382,7 +444,9 @@ if __name__ == "__main__":
         if ryu_response.status_code == 200:
             logging.info("Successfully connected to Ryu controller REST API.")
         else:
-            logging.warning(f"Ryu controller responded with status: {ryu_response.status_code}")
+            logging.warning(
+                f"Ryu controller responded with status: {ryu_response.status_code}"
+            )
     except Exception as e:
         logging.error(f"Failed to connect to Ryu controller: {e}")
 
@@ -412,7 +476,9 @@ if __name__ == "__main__":
             try:
                 # Process each sample in real time
                 for i in range(len(preprocessed_live_samples)):
-                    live_sample = pd.DataFrame([original_features_for_inference.iloc[i]])
+                    live_sample = pd.DataFrame(
+                        [original_features_for_inference.iloc[i]]
+                    )
                     preprocessed_live_sample = pd.DataFrame(
                         [preprocessed_live_samples.iloc[i]]
                     )
@@ -426,15 +492,53 @@ if __name__ == "__main__":
                         original_sample=live_sample,
                         le=load_label_encoder(parent_directory=parent_directory),
                     )
-                    logging.info(f"Final prediction for live traffic: {classification_results['final_prediction']}")
+                    logging.info(
+                        f"Final prediction for live traffic: {classification_results['final_prediction']}"
+                    )
 
                     # Ignore Benign traffic
                     if classification_results["final_prediction"] == "Benign":
                         continue
 
+                    # Generate mitigation commands based on detected attack
+                    logging.info("Generating mitigation commands...")
+                    mitigation_commands = (
+                        nas.response_agent.generate_mitigation_commands(
+                            classification_results=classification_results,
+                            original_sample=live_sample,
+                            dpid=2,  # Use same DPID as Ryu adapter
+                        )
+                    )
+
+                    if mitigation_commands:
+                        # Print summary of commands
+                        summary = nas.response_agent.get_mitigation_summary(
+                            mitigation_commands
+                        )
+                        logging.info(f"Mitigation Summary:\n{summary}")
+
+                        # Execute the mitigation commands
+                        execution_results = (
+                            nas.response_agent.execute_mitigation_commands(
+                                mitigation_commands
+                            )
+                        )
+                        logging.info(
+                            f"Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully"
+                        )
+
+                        if execution_results["failed_commands"]:
+                            logging.warning(
+                                f"Failed to execute {len(execution_results['failed_commands'])} commands"
+                            )
+                    else:
+                        logging.info("No mitigation commands generated for this attack")
+
                     # Generate reports
                     rpg = ReportPageGeneration()
-                    rpg.generate_report(live_sample, classifier_prediction=classification_results)
+                    rpg.generate_report(
+                        live_sample, classifier_prediction=classification_results
+                    )
                     rpg.serve_reports()
 
             except Exception as e:
