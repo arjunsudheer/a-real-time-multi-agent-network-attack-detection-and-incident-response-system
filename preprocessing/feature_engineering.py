@@ -1,3 +1,4 @@
+from csv import Error
 import pandas as pd
 import numpy as np
 from typing import Callable
@@ -257,7 +258,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
             elif protocol == 0:
                 return "HOPOPT"
             else:
-                print(protocol)
+                raise Error(f"{protocol} is not a supported protocol number")
 
         df["ProtocolCategory"] = df["Protocol"].apply(map_protocol_category)
 

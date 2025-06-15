@@ -78,9 +78,9 @@ sudo apt install -y mininet openvswitch-switch hping3 nmap
 
 └── Mininet with:
 
-└── h1, h2, h3 (virtual hosts)
+└── h1, h2 (virtual hosts)
 
-└── s1, s2, s3 (OpenFlow switches)
+└── s1, s2 (OpenFlow switches)
 
 - Mininet creates a virtual network inside the VM.
 
@@ -116,14 +116,14 @@ Look for something like 192.168.64.1.
 Launch Mininet:
 
 ```
-sudo mn --controller=remote,ip=IP:<Your Host Machine IP Address> --topo=linear,3 --mac
+sudo mn --controller=remote,ip=<Your Host Machine IP Address> --topo=linear,2 --mac
 ```
 
 This creates:
 
-- 3 hosts: h1, h2, h3
+- 2 hosts: h1, h2
 
-- 3 switches: s1, s2, s3
+- 2 switches: s1, s2
 
 - Automatically assigns MAC addresses
 
@@ -158,6 +158,34 @@ Inspect flow entries:
 
 > curl http://localhost:8080/stats/flow/1
 
+## Simulate network attacks from mininet
+
+Run these commands in your Ubuntu VM running mininet. After you run the command, return to your host machine to run the demo, which we explain how to do in the next section.
+
+> Just a quick note: To simulate different attacks from mininet, you should clear the mininet cache using this command in your terminal. If you are still in the mininet interactive shell please exit before running the following command:
+
+```
+sudo mn -c
+```
+
+### Dictionary Attack
+
+```
+h1 hping3 -S -p 22 -i u1000 10.0.0.2
+```
+
+### DNS Flood
+
+```
+h1 hping3 --udp -p 53 -i u1000 10.0.0.2
+```
+
+### Benign (Legit TCP Connection)
+
+```
+h1 telnet 10.0.0.2 80
+```
+
 ## Running the Demo
 
 To run the demo as shown in our video, use the following command:
@@ -166,13 +194,7 @@ To run the demo as shown in our video, use the following command:
 python3 -m network_agent_system
 ```
 
-In your Ubuntu VM, simulate a port scan attack by sending 1000 UDP packets to port 22 using the following command:
-
-```
-h1 hping3 -S -p 22 -i u1000 10.0.0.2
-```
-
-## If the browser does not open automatically
+### If the browser does not open automatically
 
 If the browser does not open automatically, you can open it manually by going to the following link:
 
