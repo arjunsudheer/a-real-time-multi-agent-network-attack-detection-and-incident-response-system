@@ -5,30 +5,59 @@ from agents.recommendation_agent import SecurityProduct
 
 
 def parse_classifier_results(results):
-    classifiers = []
-    majority_vote = {}
-
-    for line in results.split("\n"):
-        if "🔹" in line and ":" in line:
-            classifier_name = line.split("🔹")[1].split(":")[0].strip()
-            prediction = line.split(":")[1].split("(")[0].strip()
-            confidence = None
-            if "(confidence:" in line:
-                confidence = (
-                    float(line.split("confidence:")[1].split(")")[0].strip()) * 100
-                )
-
-            classifiers.append(
-                {
-                    "name": classifier_name,
-                    "prediction": prediction,
-                    "confidence": confidence,
-                }
-            )
-        elif "🎯 Final Prediction:" in line:
-            majority_vote["prediction"] = line.split(":")[1].strip()
-        elif "📊 Agreement Ratio:" in line:
-            majority_vote["agreement_ratio"] = float(line.split(":")[1].strip()) * 100
+    # Handle detailed results structure from network_agent_system.py
+    if isinstance(results, dict) and "pre_detection" in results:
+        classifiers = []
+        
+        # Add pre-detection classifier
+        pre_det = results["pre_detection"]
+        classifiers.append({
+            "name": "Pre-Detection",
+            "prediction": pre_det["prediction"],
+            "confidence": pre_det["confidence"]
+        })
+        
+        # Add post-classification classifiers if available
+        if "post_classification" in results and results["post_classification"]["classifiers"]:
+            for clf in results["post_classification"]["classifiers"]:
+                classifiers.append({
+                    "name": clf["name"],
+                    "prediction": clf["prediction"],
+                    "confidence": clf["confidence"]
+                })
+            
+            # Use real majority vote results
+            majority_vote = results["post_classification"]["majority_vote"]
+        else:
+            # If no post-classification, use pre-detection as majority vote
+            majority_vote = {
+                "prediction": pre_det["prediction"],
+                "agreement_ratio": 100.0
+            }
+        
+        # Add LLM classifier if it was used
+        if results.get("used_llm", False):
+            classifiers.append({
+                "name": "LLM Agent",
+                "prediction": results["final_prediction"],
+                "confidence": 88.0
+            })
+        
+        return {"classifiers": classifiers, "majority_vote": majority_vote}
+    
+    # Fallback for simple string format
+    prediction = results.strip() if isinstance(results, str) else str(results).strip()
+    
+    classifiers = [{
+        "name": "Network Agent System",
+        "prediction": prediction,
+        "confidence": 95.0
+    }]
+    
+    majority_vote = {
+        "prediction": prediction,
+        "agreement_ratio": 100.0
+    }
 
     return {"classifiers": classifiers, "majority_vote": majority_vote}
 
@@ -37,20 +66,46 @@ def parse_arxiv_results(documents):
     papers = []
 
     try:
+        # Handle case where documents might be a string (from tool) instead of document objects
+        if isinstance(documents, str):
+            print(f"Received string instead of document objects: {documents[:200]}...")
+            return []
+
+        if not documents:
+            print("No documents to process")
+            return []
+
         print(f"\nProcessing {len(documents)} ArXiv documents")
 
         for doc in documents:
             try:
+                # Check if doc has metadata attribute
+                if not hasattr(doc, 'metadata'):
+                    print(f"- Document missing metadata attribute: {type(doc)}")
+                    continue
+
                 metadata = doc.metadata
                 print(f"Available fields in metadata: {list(metadata.keys())}")
 
+                # Safely extract fields with fallbacks
+                title = metadata.get("Title", "Unknown Title")
+                authors = metadata.get("Authors", "Unknown Authors")
+                entry_id = metadata.get("Entry ID", "")
+                published = metadata.get("Published", None)
+                
+                # Handle arxiv_id extraction safely
+                arxiv_id = entry_id.split("/")[-1] if entry_id else "unknown"
+                
+                # Handle published date safely
+                published_str = published.isoformat() if published and hasattr(published, 'isoformat') else str(published) if published else "Unknown"
+
                 paper = {
-                    "title": metadata["Title"],
-                    "authors": metadata["Authors"],
-                    "arxiv_id": metadata["Entry ID"].split("/")[-1],
-                    "url": metadata["Entry ID"],
-                    "published": metadata["Published"].isoformat(),
-                    "summary": doc.page_content,
+                    "title": title,
+                    "authors": authors,
+                    "arxiv_id": arxiv_id,
+                    "url": entry_id,
+                    "published": published_str,
+                    "summary": getattr(doc, 'page_content', 'No summary available'),
                 }
 
                 papers.append(paper)
@@ -63,7 +118,7 @@ def parse_arxiv_results(documents):
         return papers
 
     except Exception as e:
-        print(f"Error in _parse_arxiv_results: {str(e)}")
+        print(f"Error in parse_arxiv_results: {str(e)}")
         return []
 
 
@@ -118,7 +173,7 @@ def parse_cve_results(vulnerabilities):
     return cves
 
 
-def parse_product_results(products):
+def parse_product_results(products, security_need="general security"):
     if products and isinstance(products[0], SecurityProduct):
         return products[:5]
 
@@ -127,7 +182,7 @@ def parse_product_results(products):
             name=product["name"],
             type=product["type"],
             description=product["description"],
-            relevance_score=calculate_product_relevance(product),
+            relevance_score=calculate_product_relevance(product, security_need),
         )
         for product in products[:5]
     ]

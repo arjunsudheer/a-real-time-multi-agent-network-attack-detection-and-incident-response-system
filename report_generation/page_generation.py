@@ -123,8 +123,11 @@ class ReportPageGeneration:
 
             sample_info.update(parse_classifier_results(classifier_prediction))
 
-            # traffic_type = sample_info["traffic_type"] -- During inference, there is no "Label" column
-            traffic_type = classifier_prediction
+            # traffic_type = sample_info["traffic_type"] -- During inference, there is no "Label" column  
+            if isinstance(classifier_prediction, dict):
+                traffic_type = classifier_prediction["final_prediction"]
+            else:
+                traffic_type = classifier_prediction
             try:
                 if traffic_type.lower() == "icmp flood":
                     query = 'cat:cs.CR AND (ti:"DDoS" OR ti:"denial of service" OR abs:"ICMP flood")'
@@ -137,13 +140,20 @@ class ReportPageGeneration:
 
                 print(f"\nSearching ArXiv with query: {query}")
                 try:
-                    arxiv_results = safe_arxiv_retrieve_tool(query)
+                    # Use direct ArxivRetriever to get document objects instead of string results
+                    from langchain_community.retrievers import ArxivRetriever
+                    arxiv_retriever = ArxivRetriever(
+                        load_max_docs=5,
+                        doc_content_chars_max=None,
+                        max_retries=3,
+                    )
+                    arxiv_results = arxiv_retriever.get_relevant_documents(query)
                     print(f"Found {len(arxiv_results)} papers")
 
                     if not arxiv_results:
                         fallback_query = 'cat:cs.CR AND (ti:"network security" OR ti:"intrusion detection")'
                         print(f"\nNo results, trying fallback query: {fallback_query}")
-                        arxiv_results = safe_arxiv_retrieve_tool(fallback_query)
+                        arxiv_results = arxiv_retriever.get_relevant_documents(fallback_query)
                         print(f"Found {len(arxiv_results)} papers with fallback query")
                 except Exception as e:
                     print(f"Error in ArXiv search: {str(e)}")
