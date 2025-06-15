@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 import joblib
 from pathlib import Path
+import requests
 
 from sklearn.preprocessing import LabelEncoder
 from agents.feature_selection_agent import FeatureSelectionAgent
@@ -324,62 +325,74 @@ if __name__ == "__main__":
     parent_directory = Path("datasets/aci_iot_network_dataset_2023")
     nas = NetworkAgentSystem(parent_directory=parent_directory)
 
+    logging.info("Checking Ryu controller health endpoint...")
+    try:
+        ryu_response = requests.get("http://ryu-manager:8080/stats/switches", timeout=5)
+        if ryu_response.status_code == 200:
+            logging.info("Successfully connected to Ryu controller REST API.")
+        else:
+            logging.warning(f"Ryu controller responded with status: {ryu_response.status_code}")
+    except Exception as e:
+        logging.error(f"Failed to connect to Ryu controller: {e}")
+
     logging.info("Fetching live samples from Ryu adapter...")
-    # Get live samples from ryu for analysis
-    live_samples_df = get_live_feature_vectors_from_ryu(dpid=2)
+    try:
+        live_samples_df = get_live_feature_vectors_from_ryu(dpid=2)
+        if live_samples_df.empty:
+            logging.warning("No live samples received from Ryu adapter. Exiting.")
+        else:
+            logging.info(f"Received {len(live_samples_df)} live samples from Ryu.")
+            logging.debug("Live samples data:\n%s", live_samples_df.to_string())
 
-    if live_samples_df.empty:
-        logging.warning("No live samples received from Ryu adapter. Exiting.")
-    else:
-        logging.info(f"Received {len(live_samples_df)} live samples from Ryu.")
-        logging.debug("Live samples data:\n%s", live_samples_df.to_string())
-
-        # The 'Label' column in live_samples_df is a dummy for raw data.
-        # We need the original features for the LabelingAgent if it's invoked.
-        # The preprocessing step should operate on the features without this dummy label.
-        original_features_for_inference = live_samples_df.drop(
-            columns=["Label"], errors="ignore"
-        )
-
-        logging.info("Preprocessing live samples...")
-        # Preprocess before feeding to attack detection pipeline
-        preprocessed_live_samples = nas.preprocess_inference_network_sample(
-            original_features_for_inference
-        )
-        logging.info("Live samples preprocessed successfully.")
-
-        try:
-            # Process each sample in real time
-            for i in range(len(preprocessed_live_samples)):
-                live_sample = pd.DataFrame([original_features_for_inference.iloc[i]])
-                preprocessed_live_sample = pd.DataFrame(
-                    [preprocessed_live_samples.iloc[i]]
-                )
-
-                # Feed samples through attack detection pipeline
-                logging.info(
-                    "Running inference attack detection pipeline on live samples..."
-                )
-                prediction = nas.inference_attack_detection_pipeline(
-                    preprocessed_sample=preprocessed_live_sample,
-                    original_sample=live_sample,
-                    le=load_label_encoder(parent_directory=parent_directory),
-                )
-                logging.info(f"Final prediction for live traffic: {prediction}")
-
-                # Ignore Benign traffic
-                if prediction == "Benign":
-                    continue
-
-                # Generate reports
-                rpg = ReportPageGeneration()
-                rpg.generate_report(live_sample, classifier_prediction=prediction)
-                rpg.serve_reports()
-
-        except Exception as e:
-            logging.error(
-                f"An error occurred during live sample processing or inference: {e}",
-                exc_info=True,
+            # The 'Label' column in live_samples_df is a dummy for raw data.
+            # We need the original features for the LabelingAgent if it's invoked.
+            # The preprocessing step should operate on the features without this dummy label.
+            original_features_for_inference = live_samples_df.drop(
+                columns=["Label"], errors="ignore"
             )
+
+            logging.info("Preprocessing live samples...")
+            # Preprocess before feeding to attack detection pipeline
+            preprocessed_live_samples = nas.preprocess_inference_network_sample(
+                original_features_for_inference
+            )
+            logging.info("Live samples preprocessed successfully.")
+
+            try:
+                # Process each sample in real time
+                for i in range(len(preprocessed_live_samples)):
+                    live_sample = pd.DataFrame([original_features_for_inference.iloc[i]])
+                    preprocessed_live_sample = pd.DataFrame(
+                        [preprocessed_live_samples.iloc[i]]
+                    )
+
+                    # Feed samples through attack detection pipeline
+                    logging.info(
+                        "Running inference attack detection pipeline on live samples..."
+                    )
+                    prediction = nas.inference_attack_detection_pipeline(
+                        preprocessed_sample=preprocessed_live_sample,
+                        original_sample=live_sample,
+                        le=load_label_encoder(parent_directory=parent_directory),
+                    )
+                    logging.info(f"Final prediction for live traffic: {prediction}")
+
+                    # Ignore Benign traffic
+                    if prediction == "Benign":
+                        continue
+
+                    # Generate reports
+                    rpg = ReportPageGeneration()
+                    rpg.generate_report(live_sample, classifier_prediction=prediction)
+                    rpg.serve_reports()
+
+            except Exception as e:
+                logging.error(
+                    f"An error occurred during live sample processing or inference: {e}",
+                    exc_info=True,
+                )
+    except Exception as e:
+        logging.error(f"Failed to fetch live samples from Ryu: {e}", exc_info=True)
+        live_samples_df = None
 
     logging.info("Network Agent System processing finished.")

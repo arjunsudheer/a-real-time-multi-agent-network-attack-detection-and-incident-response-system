@@ -5,6 +5,11 @@ services:
     container_name: ryu-manager
     expose:
       - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/stats/switches"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mininet:
     image: iwaseyusuke/mininet
@@ -18,6 +23,8 @@ services:
   agent:
     build: ./agent
     container_name: agent
+    env_file:
+      - .env
     volumes:
       - ./:/app
     working_dir: /app
@@ -25,3 +32,8 @@ services:
     depends_on:
       - ryu-manager
       - mininet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://ryu-manager:8080/stats/switches"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
