@@ -8,3 +8,5 @@ datasets
 report_generation/reports
 
 agents/*_long_term_memory
+experiments/results
+datasets.zip
