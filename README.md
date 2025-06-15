@@ -4,6 +4,10 @@ This repository is dedicated to our project on LLM-based network attack detectio
 
 Please follow this guide to run our implementation. The code for the demo is on the **main** branch. We use the Gemini API.
 
+## Video Demo Link
+
+[https://youtu.be/CRR4-pxZ01Q](https://youtu.be/CRR4-pxZ01Q)
+
 ## Dataset
 
 We use the ACI IOT Dataset for our experiment. Originally from: [https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle](https://www.kaggle.com/datasets/emilynack/aci-iot-network-traffic-dataset-2023?select=ACI-IoT-2023_Kaggle).
