@@ -47,11 +47,11 @@ def safe_web_search(query: str) -> str:
     global _last_search_time
 
     try:
-        # Rate limiting: ensure at least 1 second between requests
+        # Rate limiting: ensure at least 3 seconds between requests to avoid 429 errors
         current_time = time.time()
         time_since_last_request = current_time - _last_search_time
-        if time_since_last_request < 1.0:
-            sleep_time = 1.0 - time_since_last_request
+        if time_since_last_request < 3.0:
+            sleep_time = 3.0 - time_since_last_request
             time.sleep(sleep_time)
 
         _last_search_time = time.time()
