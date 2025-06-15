@@ -2,9 +2,21 @@ import json
 import subprocess
 import shlex
 import requests
+import time
+import os
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 import pandas as pd
+import numpy as np
+from pathlib import Path
+
+from langchain_google_genai import GoogleGenerativeAI
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.prompts import PromptTemplate
+from langchain_core.tools import Tool
+
+from agents.knowledge_source import KnowledgeSource
+from agents.llm_tools import safe_web_search_tool, safe_arxiv_retrieve_tool
 
 
 class MitigationCommand(BaseModel):
@@ -91,7 +103,9 @@ class NetworkTopology(BaseModel):
 
 
 class ResponseAgent:
-    def __init__(self, ryu_host: str = "localhost:8080"):
+    def __init__(
+        self, ryu_host: str = "localhost:8080", use_long_term_memory: bool = False
+    ):
         # IP to host mapping
         self.ip_to_host = {
             "10.0.0.1": "h1",
@@ -112,6 +126,170 @@ class ResponseAgent:
         self.blocked_hosts = set()
         self.blocked_flows = []
         self.applied_commands = []
+
+        # RAG components
+        self.use_long_term_memory = use_long_term_memory
+
+        # Long term memory for mitigation strategies
+        self.ltm_db = KnowledgeSource(
+            Path("agents/response_agent_long_term_memory"),
+        )
+
+        self.__initialize_tools()
+        self.__initialize_llm()
+
+    def __initialize_llm(self) -> None:
+        """
+        Initialize the response agent using the Gemini 2.0 Flash model.
+        Creates a ReAct agent with access to tools for intelligent mitigation generation.
+        """
+        llm = GoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            temperature=0.3,
+        )
+
+        prompt = PromptTemplate.from_template(
+            """You are an expert network security response agent. Your task is to analyze network threats 
+            and generate appropriate mitigation strategies for SDN controllers.
+
+            You have access to the following tools:
+            {tools}
+
+            Use these tools to analyze the threat and provide detailed mitigation strategies including:
+            1. Specific SDN flow rules to block malicious traffic
+            2. Latest research about effective mitigation techniques
+            3. Best practices for network threat response
+            4. Priority levels and implementation considerations
+
+            Network Environment:
+            - SDN Controller: Ryu at {ryu_host}
+            - Topology: Linear topology with switches and hosts
+            - Protocol Support: TCP, UDP, ICMP
+            - Host Mapping: 10.0.0.1->h1, 10.0.0.2->h2, etc.
+
+            Remember to:
+            - Generate precise OpenFlow rules for the Ryu controller
+            - Consider the network topology and potential impact
+            - Search for latest threat mitigation research
+            - Provide clear justification for mitigation choices
+            - Include priority levels and execution order
+
+            To use a tool, please use the following format:
+            Thought: I need to research mitigation strategies for this threat
+            Action: the action to take, should be one of [{tool_names}]
+            Action Input: (provide search terms for research tools)
+            Observation: the result of the action
+            ... (this Thought/Action/Action Input/Observation can repeat N times)
+            Thought: I now know how to create effective mitigation
+            Final Answer: the final mitigation strategy and commands
+
+            Begin!
+
+            Question: {input}
+
+            {agent_scratchpad}"""
+        )
+
+        # Create React agent
+        agent = create_react_agent(llm=llm, tools=self.tools, prompt=prompt)
+
+        # Create agent executor
+        self.agent_executor = AgentExecutor(
+            agent=agent,
+            tools=self.tools,
+            verbose=True,
+            handle_parsing_errors=True,
+            max_iterations=10,
+            max_execution_time=300,  # 5 minutes timeout
+        )
+
+    def __initialize_tools(self) -> None:
+        """
+        Initialize tools for the response agent to use for intelligent mitigation generation.
+        """
+
+        def get_network_topology() -> Dict[str, Any]:
+            """
+            Retrieve current network topology from Ryu controller.
+            Returns information about switches, hosts, and their connections.
+            """
+            return self.query_ryu_topology()
+
+        def get_flow_table_stats() -> Dict[str, Any]:
+            """
+            Get current flow table statistics from all switches.
+            Returns flow counts and existing rules for analysis.
+            """
+            try:
+                topology_data = self.query_ryu_topology()
+                stats = {}
+
+                for dpid in topology_data["switches"]:
+                    try:
+                        flows_url = f"{self.ryu_base_url}/stats/flow/{dpid}"
+                        response = requests.get(flows_url, timeout=5)
+                        if response.status_code == 200:
+                            flows = response.json()
+                            stats[f"switch_{dpid}"] = {
+                                "flow_count": len(flows.get(str(dpid), [])),
+                                "flows": flows.get(str(dpid), []),
+                            }
+                    except Exception as e:
+                        stats[f"switch_{dpid}"] = {"error": str(e)}
+
+                return stats
+            except Exception as e:
+                return {"error": str(e)}
+
+        def get_mitigation_patterns() -> List[str]:
+            """
+            Get common mitigation patterns and strategies used in SDN networks.
+            Returns a list of proven mitigation approaches.
+            """
+            return [
+                "Source IP blocking - Drop all traffic from malicious IP",
+                "Protocol-specific blocking - Block specific protocols (TCP/UDP/ICMP)",
+                "Port-based filtering - Block traffic to/from specific ports",
+                "Rate limiting - Limit packet rate from suspicious sources",
+                "Traffic redirection - Redirect suspicious traffic for analysis",
+                "VLAN isolation - Isolate compromised hosts to separate VLAN",
+                "Quality of Service (QoS) - Downgrade priority of suspicious traffic",
+                "Geographic blocking - Block traffic from specific geographic regions",
+            ]
+
+        # Create tools for the agent
+        self.tools = [
+            Tool(
+                name="GetNetworkTopology",
+                func=lambda _: get_network_topology(),
+                description=get_network_topology.__doc__,
+            ),
+            Tool(
+                name="GetFlowTableStats",
+                func=lambda _: get_flow_table_stats(),
+                description=get_flow_table_stats.__doc__,
+            ),
+            Tool(
+                name="GetMitigationPatterns",
+                func=lambda _: get_mitigation_patterns(),
+                description=get_mitigation_patterns.__doc__,
+            ),
+            safe_web_search_tool,
+            safe_arxiv_retrieve_tool,
+        ]
+
+        # Only allow the long-term memory access tool during inference
+        if self.use_long_term_memory:
+            self.tools.append(
+                Tool(
+                    name="AccessPreviousMitigationStrategies",
+                    func=lambda query: self.ltm_db.retrieve_relevant_knowledge(
+                        query=query
+                    ),
+                    description="Retrieve previous successful mitigation strategies from long-term memory based on similar threats and network conditions.",
+                )
+            )
 
     def query_ryu_topology(self) -> Dict[str, List]:
         """Query the current network topology from Ryu controller"""
@@ -582,12 +760,60 @@ class ResponseAgent:
         dpid: int = 1,
     ) -> List[MitigationCommand]:
         """
-        Backward compatibility method that extracts parameters from classification results
-        and original sample, then calls the main mitigation method
+        Generate mitigation commands using RAG-enhanced intelligent analysis.
+        Falls back to traditional rule-based approach if intelligent generation fails.
         """
         if classification_results.get("final_prediction", "Unknown") == "Benign":
             print("No mitigation needed for benign traffic")
             return []
+
+        # Extract threat information
+        threat_info = {
+            "type": classification_results.get("final_prediction", "Unknown"),
+            "confidence": classification_results.get("confidence", "Unknown"),
+            "severity": (
+                "High"
+                if classification_results.get("final_prediction", "Unknown") != "Benign"
+                else "Low"
+            ),
+            "source": "ML Classification",
+        }
+
+        try:
+            # Use intelligent RAG-based mitigation generation
+            intelligent_result = self.get_intelligent_mitigation(
+                threat_info=threat_info,
+                network_sample=original_sample,
+                classification_results=classification_results,
+            )
+
+            if (
+                intelligent_result.get("intelligent_analysis")
+                and intelligent_result["mitigation_strategy"]["commands"]
+            ):
+                print("✅ Using intelligent RAG-based mitigation strategy")
+                return intelligent_result["mitigation_strategy"]["commands"]
+            else:
+                print("⚠️ Intelligent generation failed, using fallback")
+                return intelligent_result["mitigation_strategy"]["commands"]
+
+        except Exception as e:
+            print(f"❌ Error in intelligent mitigation: {str(e)}")
+            # Traditional fallback approach
+            return self._generate_traditional_mitigation_commands(
+                classification_results, original_sample, dpid
+            )
+
+    def _generate_traditional_mitigation_commands(
+        self,
+        classification_results: Dict[str, Any],
+        original_sample: pd.DataFrame,
+        dpid: int = 1,
+    ) -> List[MitigationCommand]:
+        """
+        Traditional rule-based mitigation command generation (fallback method).
+        """
+        print("Using traditional rule-based mitigation generation")
 
         # Extract network information from the sample
         src_ip = (
@@ -647,6 +873,65 @@ class ResponseAgent:
         """Get summary of mitigation commands"""
         return self._get_command_summary(commands)
 
+    def get_rag_enhanced_summary(
+        self,
+        commands: List[MitigationCommand],
+        threat_info: Dict[str, Any] = None,
+        include_research: bool = True,
+    ) -> str:
+        """
+        Get RAG-enhanced summary with research-backed explanations.
+
+        Args:
+            commands: List of mitigation commands
+            threat_info: Information about the threat
+            include_research: Whether to include research findings
+
+        Returns:
+            Enhanced summary with research context
+        """
+        try:
+            if not include_research or not hasattr(self, "agent_executor"):
+                return self.get_mitigation_summary(commands)
+
+            # Create research prompt
+            threat_type = (
+                threat_info.get("type", "Unknown") if threat_info else "Unknown"
+            )
+            prompt = f"""Provide a comprehensive analysis of these network security mitigation strategies for {threat_type} attacks:
+
+MITIGATION COMMANDS:
+{self._get_command_summary(commands)}
+
+Please research and provide:
+1. Effectiveness analysis of these mitigation approaches
+2. Latest research findings on {threat_type} attack mitigation
+3. Potential limitations or side effects
+4. Best practices and recommendations
+5. Alternative or complementary strategies
+
+Focus on practical insights for network security operators."""
+
+            # Get intelligent analysis
+            response = self.agent_executor.invoke({"input": prompt})
+
+            return f"""🔍 INTELLIGENT MITIGATION ANALYSIS
+
+{response.get('output', 'Analysis unavailable')}
+
+📋 GENERATED COMMANDS:
+{self._get_command_summary(commands)}
+
+Generated using RAG-enhanced threat analysis."""
+
+        except Exception as e:
+            print(f"Error generating RAG-enhanced summary: {str(e)}")
+            return f"""⚠️ TRADITIONAL MITIGATION SUMMARY
+
+{self._get_command_summary(commands)}
+
+Note: Enhanced analysis unavailable due to: {str(e)}"""
+
     def get_topology_for_ui(self) -> Dict[str, Any]:
         """Get network topology data formatted for UI consumption"""
         topology = self.create_network_topology_graph()
@@ -674,6 +959,16 @@ class ResponseAgent:
                 "blocked_hosts": len(self.blocked_hosts),
                 "applied_commands": len(self.applied_commands),
             },
+            "rag_capabilities": {
+                "long_term_memory_enabled": self.use_long_term_memory,
+                "intelligent_analysis_available": hasattr(self, "agent_executor"),
+                "knowledge_base_size": (
+                    len(self.ltm_db.get_all_knowledge())
+                    if hasattr(self.ltm_db, "get_all_knowledge")
+                    else 0
+                ),
+                "tools_available": len(self.tools) if hasattr(self, "tools") else 0,
+            },
         }
 
     def reset_blocking_state(self):
@@ -682,3 +977,238 @@ class ResponseAgent:
         self.blocked_flows.clear()
         self.applied_commands.clear()
         print("Reset all blocking state")
+
+    def get_intelligent_mitigation(
+        self,
+        threat_info: Dict[str, Any],
+        network_sample: pd.DataFrame = None,
+        classification_results: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Use RAG-enhanced LLM to generate intelligent mitigation strategies.
+
+        Args:
+            threat_info: Information about the detected threat
+            network_sample: Original network traffic sample
+            classification_results: Results from threat classification
+
+        Returns:
+            Dictionary with intelligent mitigation strategy and commands
+        """
+        try:
+            # Build comprehensive threat context
+            threat_context = self._build_threat_context(
+                threat_info, network_sample, classification_results
+            )
+
+            prompt = f"""Analyze this network security threat and generate comprehensive mitigation strategies:
+
+THREAT ANALYSIS:
+{threat_context}
+
+REQUIREMENTS:
+1. Generate specific OpenFlow rules for Ryu controller
+2. Research latest mitigation techniques for this threat type
+3. Consider network topology and minimize disruption
+4. Provide implementation priority and rationale
+5. Include monitoring and verification steps
+
+Please provide:
+- Detailed threat assessment
+- Specific mitigation commands (curl format for Ryu)
+- Implementation strategy and priorities
+- Potential side effects and monitoring recommendations"""
+
+            # Run the intelligent agent
+            response = self.agent_executor.invoke({"input": prompt})
+
+            # Parse the response to extract mitigation commands
+            mitigation_strategy = self._parse_llm_mitigation_response(response)
+
+            return {
+                "threat_context": threat_context,
+                "llm_response": response,
+                "mitigation_strategy": mitigation_strategy,
+                "intelligent_analysis": True,
+            }
+
+        except Exception as e:
+            print(f"Error in intelligent mitigation generation: {str(e)}")
+            # Fallback to traditional mitigation
+            return self._fallback_mitigation(threat_info, network_sample)
+
+    def _build_threat_context(
+        self,
+        threat_info: Dict[str, Any],
+        network_sample: pd.DataFrame = None,
+        classification_results: Dict[str, Any] = None,
+    ) -> str:
+        """Build comprehensive context about the threat for LLM analysis."""
+        context_parts = []
+
+        # Basic threat information
+        if threat_info:
+            context_parts.append(f"Threat Type: {threat_info.get('type', 'Unknown')}")
+            context_parts.append(f"Severity: {threat_info.get('severity', 'Unknown')}")
+            context_parts.append(f"Source: {threat_info.get('source', 'Unknown')}")
+
+        # Classification results
+        if classification_results:
+            context_parts.append(
+                f"Classification: {classification_results.get('final_prediction', 'Unknown')}"
+            )
+            context_parts.append(
+                f"Confidence: {classification_results.get('confidence', 'Unknown')}"
+            )
+
+        # Network sample details
+        if network_sample is not None and not network_sample.empty:
+            sample_info = []
+            for col in ["Src IP", "Dst IP", "Src Port", "Dst Port", "Protocol"]:
+                if col in network_sample.columns:
+                    value = (
+                        network_sample[col].iloc[0]
+                        if len(network_sample) > 0
+                        else "N/A"
+                    )
+                    sample_info.append(f"{col}: {value}")
+            context_parts.append("Network Sample: " + ", ".join(sample_info))
+
+        # Current network state
+        topology = self.query_ryu_topology()
+        context_parts.append(f"Active Switches: {len(topology.get('switches', []))}")
+        context_parts.append(f"Active Hosts: {len(topology.get('hosts', []))}")
+        context_parts.append(f"Previously Blocked Hosts: {list(self.blocked_hosts)}")
+
+        return "\n".join(context_parts)
+
+    def _parse_llm_mitigation_response(
+        self, response: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Parse LLM response to extract structured mitigation commands."""
+        output = response.get("output", "")
+
+        # Extract curl commands from the response
+        import re
+
+        curl_pattern = r"curl\s+[^`\n]+"
+        curl_commands = re.findall(curl_pattern, output)
+
+        # Convert to MitigationCommand objects
+        commands = []
+        for i, curl_cmd in enumerate(curl_commands):
+            try:
+                # Extract basic info from curl command
+                command_type = "intelligent_mitigation"
+                if "ipv4_src" in curl_cmd:
+                    command_type = "block_host"
+                elif "tcp_dst" in curl_cmd or "udp_dst" in curl_cmd:
+                    command_type = "block_port"
+                elif "ip_proto" in curl_cmd:
+                    command_type = "block_protocol"
+
+                cmd = MitigationCommand(
+                    command_type=command_type,
+                    description=f"Intelligent mitigation command {i+1} generated by RAG agent",
+                    curl_command=curl_cmd.strip(),
+                    priority=100 + i,  # Increase priority for each command
+                    dpid=1,  # Default DPID
+                )
+                commands.append(cmd)
+            except Exception as e:
+                print(f"Error parsing command {curl_cmd}: {str(e)}")
+                continue
+
+        return {
+            "commands": commands,
+            "analysis": output,
+            "command_count": len(commands),
+            "strategy_type": "intelligent_rag",
+        }
+
+    def _fallback_mitigation(
+        self, threat_info: Dict[str, Any], network_sample: pd.DataFrame = None
+    ) -> Dict[str, Any]:
+        """Fallback to traditional mitigation if intelligent generation fails."""
+        print("Using fallback mitigation strategy")
+
+        # Extract basic parameters for traditional mitigation
+        src_ip = "10.0.0.1"  # Default
+        if network_sample is not None and not network_sample.empty:
+            if "Src IP" in network_sample.columns:
+                src_ip = str(network_sample["Src IP"].iloc[0])
+
+        # Use existing mitigation logic
+        result = self.generate_and_run_mitigation_commands(src_ip=src_ip, execute=False)
+
+        return {
+            "threat_context": "Fallback mitigation used",
+            "mitigation_strategy": {
+                "commands": result["commands"],
+                "analysis": "Traditional rule-based mitigation",
+                "strategy_type": "fallback",
+            },
+            "intelligent_analysis": False,
+        }
+
+    def build_long_term_memory(
+        self,
+        threat_samples: List[Dict[str, Any]],
+        successful_mitigations: List[Dict[str, Any]],
+        rate_limit_threshold: int = 3,
+    ) -> None:
+        """
+        Build long-term memory of successful mitigation strategies.
+
+        Args:
+            threat_samples: List of threat information and contexts
+            successful_mitigations: List of successful mitigation responses
+            rate_limit_threshold: Rate limiting for API calls
+        """
+        print("Building long-term memory for mitigation strategies...")
+
+        # Store at most 25 successful mitigations
+        for i in range(min(25, len(threat_samples))):
+            attempts = 0
+
+            # Initialize LLM for every sample to avoid rate limits
+            self.__initialize_llm()
+
+            threat_sample = threat_samples[i]
+            successful_mitigation = (
+                successful_mitigations[i] if i < len(successful_mitigations) else None
+            )
+
+            try:
+                # Generate mitigation strategy
+                response = self.get_intelligent_mitigation(threat_sample)
+
+                # If we have a known successful mitigation, validate against it
+                if successful_mitigation and response.get("intelligent_analysis"):
+                    # Store successful strategy in long-term memory
+                    self.ltm_db.add_knowledge(
+                        f"""
+                        Threat Context: {response['threat_context']}
+                        
+                        Successful Mitigation Strategy: {response['mitigation_strategy']['analysis']}
+                        
+                        Generated Commands: {[cmd.dict() for cmd in response['mitigation_strategy']['commands']]}
+                        
+                        Implementation Results: {successful_mitigation}
+                        
+                        LLM Response: {response['llm_response']}
+                        """
+                    )
+                    print(
+                        f"Added successful mitigation strategy {i+1} to long-term memory"
+                    )
+
+                attempts += 1
+
+                # Rate limiting
+                if attempts % rate_limit_threshold == 0:
+                    time.sleep(30)
+
+            except Exception as e:
+                print(f"Error processing mitigation sample {i+1}: {str(e)}")
+                continue
