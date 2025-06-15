@@ -168,7 +168,7 @@ Run these commands in your Ubuntu VM running mininet. After you run the command,
 sudo mn -c
 ```
 
-### Dictionary Attack
+### Dictionary Attack (SSH Brute Force)
 
 ```
 h1 hping3 -S -p 22 -i u1000 10.0.0.2
