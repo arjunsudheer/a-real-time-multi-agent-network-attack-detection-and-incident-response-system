@@ -245,8 +245,21 @@
             <div class="space-y-4">
                 {% for product in products %}
                 <div class="bg-gray-50 p-4 rounded-lg">
-                    <h4 class="text-md font-semibold text-gray-900">{{ product.name }}</h4>
+                    <h4 class="text-md font-semibold text-gray-900">
+                        <a href="{{ product.url }}" target="_blank" class="text-indigo-600 hover:text-indigo-900">
+                            {{ product.name }}
+                            <i class="fas fa-external-link-alt text-xs ml-1"></i>
+                        </a>
+                    </h4>
+                    <p class="mt-1 text-sm text-gray-500">{{ product.type }}</p>
                     <p class="mt-2 text-sm text-gray-600">{{ product.description }}</p>
+                    {% if product.relevance_score %}
+                    <div class="mt-2">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                            Relevance: {{ product.relevance_score }}/10
+                        </span>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>

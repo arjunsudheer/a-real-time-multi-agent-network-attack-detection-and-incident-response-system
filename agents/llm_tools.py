@@ -1,11 +1,15 @@
-from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_community.retrievers import ArxivRetriever
 from langchain_core.tools import Tool
 
 import requests
 import re
+import os
+import time
 from pydantic import BaseModel, Field
 from typing import List
+
+# Rate limiting for Brave Search API
+_last_search_time = 0
 
 
 class CVE(BaseModel):
@@ -16,8 +20,6 @@ class CVE(BaseModel):
     description: str = Field(description="Description of the vulnerability")
 
 
-# Initialize DuckDuckGo search
-web_search = DuckDuckGoSearchRun()
 # Initialize arXiv retriever
 arxiv_retriever = ArxivRetriever(
     load_max_docs=5,
@@ -28,9 +30,13 @@ arxiv_retriever = ArxivRetriever(
 
 def safe_web_search(query: str) -> str:
     """
-    safe_web_search uses the DuckDuckGo search engine to perform a web search.
-
+    safe_web_search uses the Brave Search API to perform a web search.
+    
+    Uses direct HTTP requests to Brave Search API.
     Works best with short queries, ideally under 20 words.
+    Free tier provides 2000 searches per month.
+    Rate limited to 1 request per second.
+    Get your API key from: https://api.search.brave.com/
 
     Args:
         query (str): The web search query.
@@ -38,10 +44,97 @@ def safe_web_search(query: str) -> str:
     Returns:
         str: The result of the web search.
     """
+    global _last_search_time
+    
     try:
-        return web_search.run(query)
+        # Rate limiting: ensure at least 1 second between requests
+        current_time = time.time()
+        time_since_last_request = current_time - _last_search_time
+        if time_since_last_request < 1.0:
+            sleep_time = 1.0 - time_since_last_request
+            time.sleep(sleep_time)
+        
+        _last_search_time = time.time()
+        # Get API key from environment or use fallback
+        api_key = os.getenv("BRAVE_API_KEY")
+        if not api_key:
+            # Fallback API key for demo purposes - replace with your own
+            api_key = "BSAqaEHMsVKdqArHgUr_1Po3vZNVj8T"
+
+        url = "https://api.search.brave.com/res/v1/web/search"
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": api_key
+        }
+
+        params = {
+            "q": query,
+            "count": 10,
+            "text_decorations": False,
+            "search_lang": "en",
+            "country": "US",
+            "safesearch": "moderate"
+        }
+
+        print(f"Brave Search - Making request to: {url}")
+        print(f"Brave Search - Query: {query}")
+        print(f"Brave Search - Using API key: {api_key[:10]}...")
+        
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        
+        print(f"Brave Search - Response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Brave Search - Response keys: {list(data.keys())}")
+            
+            results = []
+
+            if "web" in data and "results" in data["web"]:
+                web_results = data["web"]["results"]
+                print(f"Brave Search - Found {len(web_results)} web results")
+                
+                for result in web_results:
+                    title = result.get("title", "")
+                    url = result.get("url", "")
+                    description = result.get("description", "")
+
+                    formatted_result = f"Title: {title}\nURL: {url}\nDescription: {description}\n"
+                    results.append(formatted_result)
+            else:
+                print(f"Brave Search - No 'web' results found in response")
+                print(f"Brave Search - Full response: {data}")
+
+            if results:
+                print(f"Brave Search - Returning {len(results)} formatted results")
+                return "\n".join(results)
+            else:
+                print("Brave Search - No search results found")
+                return "No search results found."
+
+        elif response.status_code == 429:
+            print(f"Brave Search - Rate limit exceeded")
+            return "ERROR: Brave Search API rate limit exceeded. Please try again later."
+        elif response.status_code == 401:
+            print(f"Brave Search - Invalid API key")
+            try:
+                error_data = response.json()
+                print(f"Brave Search - Error response: {error_data}")
+            except:
+                print(f"Brave Search - Error response text: {response.text}")
+            return "ERROR: Invalid Brave Search API key. Please set BRAVE_API_KEY environment variable or get a key from https://api.search.brave.com/"
+        else:
+            print(f"Brave Search - Unexpected status code: {response.status_code}")
+            try:
+                error_data = response.json()
+                print(f"Brave Search - Error response: {error_data}")
+            except:
+                print(f"Brave Search - Error response text: {response.text}")
+            return f"ERROR: Brave Search API returned status code {response.status_code}"
+
     except Exception as e:
-        return f"ERROR: Web Search failed: {e}"
+        return f"ERROR: Brave Search failed: {str(e)}"
 
 
 def safe_arxiv_retrieve(query: str) -> str:
