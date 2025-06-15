@@ -5,7 +5,6 @@ import joblib
 from pathlib import Path
 
 from sklearn.preprocessing import LabelEncoder
-
 from agents.feature_selection_agent import FeatureSelectionAgent
 from agents.labeling_agent import LabelingAgent
 from preprocessing.data_cleaning import (
@@ -13,15 +12,18 @@ from preprocessing.data_cleaning import (
     clean_numeric_columns,
     keep_selected_features,
 )
+from preprocessing.feature_engineering import engineer_features
+
 from attack_detection_pipeline.pre_detection import PreDetection
 from attack_detection_pipeline.post_classification import PostClassification
 from preprocessing.data_transformation import (
     load_label_encoder,
-    match_column_format,
     transform_and_scale_features,
     transform_data,
 )
+
 from ryu_adapter.flow_collector import get_live_feature_vectors_from_ryu
+
 from report_generation.page_generation import ReportPageGeneration
 
 
@@ -91,7 +93,7 @@ class NetworkAgentSystem:
         def save_dataset(data: pd.DataFrame | np.ndarray, name: str):
             path = self.preprocessed_datasets_directory / f"{name}.csv"
             if isinstance(data, np.ndarray):
-                pd.Series(data).to_csv(path, index=False)
+                pd.Series(data, name="Label").to_csv(path, index=False)
             else:
                 data.to_csv(path, index=False)
 
@@ -99,7 +101,7 @@ class NetworkAgentSystem:
         df = pd.read_csv(self.parent_directory / "original_dataset/ACI-IoT-2023.csv")
 
         # Only use a portion of the dataset to improve speed and satisfy memory limitations
-        df = df.sample(frac=0.2, random_state=42)
+        df = df.sample(frac=0.05, random_state=42)
 
         # Save initial dataset metrics
         with open(self.parent_directory / "dataset_metrics.txt", "w") as f:
@@ -128,18 +130,20 @@ class NetworkAgentSystem:
             label_column=self.label_column,
         )
 
-        # Drop irrelevant features
-        fsa = FeatureSelectionAgent(
-            df=df,
-            label_column=self.label_column,
-            dataset_name=self.parent_directory.name,
-        )
-        df = fsa.select_features()
-
         # Clean data
         df = clean_data(df, label_column=self.label_column)
         # Remove non-numeric characters from numeric columns
         df = clean_numeric_columns(df)
+
+        # Engineer relevant features
+        df = engineer_features(df)
+
+        # Drop irrelevant features
+        fsa = FeatureSelectionAgent(
+            df=df,
+            label_column=self.label_column,
+        )
+        df = fsa.select_features()
 
         # Save cleaned dataset metrics
         with open(self.parent_directory / "dataset_metrics.txt", "a") as f:
@@ -251,13 +255,13 @@ class NetworkAgentSystem:
     def preprocess_inference_network_sample(
         self, network_traffic_sample: pd.DataFrame
     ) -> pd.DataFrame:
-        # Clean and transform sample
-        # Match expected column format
-        preprocessed_sample = match_column_format(
-            network_traffic_sample, reference_df=self.X_train_original
-        )
         # Remove non-numeric characters from numeric columns
-        preprocessed_sample = clean_numeric_columns(preprocessed_sample)
+        preprocessed_sample = clean_numeric_columns(network_traffic_sample)
+        # Engineer relevant features
+        preprocessed_sample = engineer_features(preprocessed_sample)
+        # Reorder to match expected column order
+        preprocessed_sample = preprocessed_sample[self.X_train_original.columns]
+        preprocessed_sample.to_csv("live_sample.csv")
         # Use the FeatureHasher and StandardScaler to transform the sample
         preprocessed_sample = transform_and_scale_features(
             preprocessed_sample,
@@ -275,32 +279,33 @@ class NetworkAgentSystem:
         (
             malicious_preprocessed_sample_df,
             malicious_original_sample_df,
-            malicious_index,
+            malicious_indices,
         ) = self.pre_detection.filter_malicious_samples(
             preprocessed_samples=preprocessed_sample,
             original_samples=original_sample,
         )
         # If there are no malicious indices, then the sample was benign
-        if len(malicious_index) == 0:
+        if len(malicious_indices) == 0:
             return "Benign"
 
         # Post-classification low agreement sample filtering
         (
             predictions,
             low_agreement_original_samples_df,
-            low_agreement_index,
+            low_agreement_indices,
         ) = self.post_classification.filter_low_agreement_samples(
             preprocessed_malicious_samples=malicious_preprocessed_sample_df,
             original_malicious_samples=malicious_original_sample_df,
         )
         # If there are no low agreement indices, then an attack class was determined
-        if len(low_agreement_index) == 0:
+        if len(low_agreement_indices) == 0:
             return le.inverse_transform(predictions["majority_predictions"])[0]
 
         # Prompt labeling agent to resolve the final class prediction for the low_agreement sample
         la = LabelingAgent(
             dataset_directory=self.parent_directory,
             label_column=self.label_column,
+            use_long_term_memory=True,  # Allow labeling agent to access long-term memory since it was built during the training stage
         )
         response = la.get_llm_prediction(
             sample=low_agreement_original_samples_df.iloc[0]
@@ -321,9 +326,7 @@ if __name__ == "__main__":
 
     logging.info("Fetching live samples from Ryu adapter...")
     # Get live samples from ryu for analysis
-    live_samples_df = get_live_feature_vectors_from_ryu(
-        num_samples_to_fetch=5, dpid=1
-    )  # Fetch 5 samples
+    live_samples_df = get_live_feature_vectors_from_ryu(dpid=2)
 
     if live_samples_df.empty:
         logging.warning("No live samples received from Ryu adapter. Exiting.")
@@ -339,17 +342,19 @@ if __name__ == "__main__":
         )
 
         logging.info("Preprocessing live samples...")
+        # Preprocess before feeding to attack detection pipeline
+        preprocessed_live_samples = nas.preprocess_inference_network_sample(
+            original_features_for_inference
+        )
+        logging.info("Live samples preprocessed successfully.")
 
         try:
             # Process each sample in real time
-            for i in range(len(original_features_for_inference)):
+            for i in range(len(preprocessed_live_samples)):
                 live_sample = pd.DataFrame([original_features_for_inference.iloc[i]])
-
-                # Preprocess before feeding to attack detection pipeline
-                preprocessed_live_sample = nas.preprocess_inference_network_sample(
-                    live_sample
+                preprocessed_live_sample = pd.DataFrame(
+                    [preprocessed_live_samples.iloc[i]]
                 )
-                logging.info("Live samples preprocessed successfully.")
 
                 # Feed samples through attack detection pipeline
                 logging.info(
