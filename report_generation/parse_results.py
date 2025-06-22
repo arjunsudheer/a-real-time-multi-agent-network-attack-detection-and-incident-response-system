@@ -79,17 +79,14 @@ def parse_arxiv_results(documents):
             print("No documents to process")
             return []
 
-        print(f"\nProcessing {len(documents)} ArXiv documents")
-
+        # Processing ArXiv documents with minimal logging
         for doc in documents:
             try:
                 # Check if doc has metadata attribute
                 if not hasattr(doc, "metadata"):
-                    print(f"- Document missing metadata attribute: {type(doc)}")
                     continue
 
                 metadata = doc.metadata
-                print(f"Available fields in metadata: {list(metadata.keys())}")
 
                 # Safely extract fields with fallbacks
                 title = metadata.get("Title", "Unknown Title")
@@ -117,10 +114,9 @@ def parse_arxiv_results(documents):
                 }
 
                 papers.append(paper)
-                print(f"- Successfully parsed paper: {paper['title'][:100]}")
 
             except Exception as e:
-                print(f"- Error parsing paper: {str(e)}")
+                # Only log errors for debugging
                 continue
 
         return papers
