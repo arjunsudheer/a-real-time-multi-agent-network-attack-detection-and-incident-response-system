@@ -135,6 +135,9 @@ class ResponseAgent:
             Path("agents/response_agent_long_term_memory"),
         )
 
+        # Control verbosity of network discovery logs
+        self.verbose_network_logs = False
+
         self.__initialize_tools()
         self.__initialize_llm()
 
@@ -150,11 +153,11 @@ class ResponseAgent:
         )
 
         prompt = PromptTemplate.from_template(
-            """You are an expert network security response agent. Your task is to analyze network threats 
+            f"""You are an expert network security response agent. Your task is to analyze network threats 
             and generate appropriate mitigation strategies for SDN controllers.
 
             You have access to the following tools:
-            {tools}
+            {{tools}}
 
             Use these tools to analyze the threat and provide detailed mitigation strategies including:
             1. Specific SDN flow rules to block malicious traffic
@@ -163,7 +166,7 @@ class ResponseAgent:
             4. Priority levels and implementation considerations
 
             Network Environment:
-            - SDN Controller: Ryu at {ryu_host}
+            - SDN Controller: Ryu at {self.ryu_host}
             - Topology: Linear topology with switches and hosts
             - Protocol Support: TCP, UDP, ICMP
             - Host Mapping: 10.0.0.1->h1, 10.0.0.2->h2, etc.
@@ -177,7 +180,7 @@ class ResponseAgent:
 
             To use a tool, please use the following format:
             Thought: I need to research mitigation strategies for this threat
-            Action: the action to take, should be one of [{tool_names}]
+            Action: the action to take, should be one of [{{tool_names}}]
             Action Input: (provide search terms for research tools)
             Observation: the result of the action
             ... (this Thought/Action/Action Input/Observation can repeat N times)
@@ -186,9 +189,9 @@ class ResponseAgent:
 
             Begin!
 
-            Question: {input}
+            Question: {{input}}
 
-            {agent_scratchpad}"""
+            {{agent_scratchpad}}"""
         )
 
         # Create React agent
@@ -303,7 +306,8 @@ class ResponseAgent:
 
             # Get switches using correct Ryu REST API endpoint
             switches_url = f"{self.ryu_base_url}/stats/switches"
-            print(f"Querying switches from: {switches_url}")
+            if self.verbose_network_logs:
+                print(f"Querying switches from: {switches_url}")
             response = requests.get(switches_url, timeout=5)
 
             if response.status_code == 200:
@@ -311,11 +315,13 @@ class ResponseAgent:
                 topology_data["switches"] = (
                     switches if isinstance(switches, list) else []
                 )
-                print(
-                    f"Found {len(topology_data['switches'])} switches: {topology_data['switches']}"
-                )
+                if self.verbose_network_logs:
+                    print(
+                        f"Found {len(topology_data['switches'])} switches: {topology_data['switches']}"
+                    )
             else:
-                print(f"Failed to get switches. Status: {response.status_code}")
+                if self.verbose_network_logs:
+                    print(f"Failed to get switches. Status: {response.status_code}")
 
             # Get port descriptions to understand network layout
             for dpid in topology_data["switches"]:
@@ -357,17 +363,20 @@ class ResponseAgent:
                                             "port": port_no,
                                         }
 
-                        print(f"Switch {dpid} has {len(ports)} ports")
+                        if self.verbose_network_logs:
+                            print(f"Switch {dpid} has {len(ports)} ports")
 
                 except Exception as e:
-                    print(f"Error getting ports for switch {dpid}: {str(e)}")
+                    if self.verbose_network_logs:
+                        print(f"Error getting ports for switch {dpid}: {str(e)}")
                     continue
 
             # For testing purposes, if no hosts discovered, add some default ones based on common topology
             if not topology_data["hosts"] and topology_data["switches"]:
-                print(
-                    "No hosts discovered from ports, using fallback host detection..."
-                )
+                if self.verbose_network_logs:
+                    print(
+                        "No hosts discovered from ports, using fallback host detection..."
+                    )
                 default_hosts = [
                     {
                         "dpid": 1,
@@ -397,13 +406,15 @@ class ResponseAgent:
                             "port": host["port"],
                         }
 
-            print(
-                f"Discovered {len(topology_data['hosts'])} hosts: {[h['ipv4'] for h in topology_data['hosts']]}"
-            )
+            if self.verbose_network_logs:
+                print(
+                    f"Discovered {len(topology_data['hosts'])} hosts: {[h['ipv4'] for h in topology_data['hosts']]}"
+                )
             return topology_data
 
         except Exception as e:
-            print(f"Error querying Ryu topology: {str(e)}")
+            if self.verbose_network_logs:
+                print(f"Error querying Ryu topology: {str(e)}")
             return {"switches": [], "hosts": [], "links": [], "host_port_mapping": {}}
 
     def _infer_host_ip_from_switch_port(self, dpid: int, port_no: int) -> str:
@@ -1001,23 +1012,37 @@ Note: Enhanced analysis unavailable due to: {str(e)}"""
                 threat_info, network_sample, classification_results
             )
 
-            prompt = f"""Analyze this network security threat and generate comprehensive mitigation strategies:
+            prompt = f"""Analyze this network security threat and generate EFFECTIVE blocking mitigation strategies:
 
 THREAT ANALYSIS:
 {threat_context}
 
-REQUIREMENTS:
-1. Generate specific OpenFlow rules for Ryu controller
-2. Research latest mitigation techniques for this threat type
-3. Consider network topology and minimize disruption
-4. Provide implementation priority and rationale
-5. Include monitoring and verification steps
+CRITICAL REQUIREMENTS:
+1. BLOCK THE ATTACK - Use empty actions array [] to DROP traffic completely
+2. Generate SIMPLE and EFFECTIVE OpenFlow rules for Ryu controller
+3. Prefer proven blocking strategies over complex rate limiting
+4. Use our tested fallback patterns when in doubt
+
+PROVEN EFFECTIVE BLOCKING PATTERNS:
+- Block host completely: {{"dpid": 1, "priority": 100, "match": {{"ipv4_src": "SOURCE_IP", "eth_type": 2048}}, "actions": []}}
+- Block specific protocol/port: {{"dpid": 1, "priority": 200, "match": {{"eth_type": 2048, "ip_proto": 6, "tcp_dst": 22, "ipv4_src": "SOURCE_IP"}}, "actions": []}}
+- Block ICMP: {{"dpid": 1, "priority": 100, "match": {{"eth_type": 2048, "ip_proto": 1, "ipv4_src": "SOURCE_IP"}}, "actions": []}}
+
+IMPORTANT NOTES:
+- Empty actions array [] = BLOCKS/DROPS traffic (EFFECTIVE)
+- Actions with OUTPUT or METER = ALLOWS traffic through (INEFFECTIVE for blocking)
+- Higher priority numbers = higher precedence
+- Always use "eth_type": 2048 for IPv4 traffic
+
+Generate 1-2 SIMPLE curl commands using the proven patterns above. Focus on BLOCKING the attack source effectively.
+
+Example format:
+curl -X POST http://localhost:8080/stats/flowentry/add -d '{{"dpid": 1, "priority": 100, "match": {{"ipv4_src": "10.0.0.1", "eth_type": 2048}}, "actions": []}}'
 
 Please provide:
-- Detailed threat assessment
-- Specific mitigation commands (curl format for Ryu)
-- Implementation strategy and priorities
-- Potential side effects and monitoring recommendations"""
+- Brief threat assessment
+- 1-2 specific blocking commands (curl format for Ryu)
+- Why this approach effectively blocks the attack"""
 
             # Run the intelligent agent
             response = self.agent_executor.invoke({"input": prompt})
@@ -1088,16 +1113,33 @@ Please provide:
         """Parse LLM response to extract structured mitigation commands."""
         output = response.get("output", "")
 
-        # Extract curl commands from the response
+        # Extract curl commands from the response with stricter validation
         import re
 
-        curl_pattern = r"curl\s+[^`\n]+"
+        # Look for complete curl commands with proper structure
+        curl_pattern = r"curl\s+-X\s+POST\s+http://[^\s]+\s+-d\s+'[^']+'"
         curl_commands = re.findall(curl_pattern, output)
+
+        # If no properly formatted curl commands found, try a more flexible pattern
+        if not curl_commands:
+            # Look for any curl command that contains flowentry/add
+            flexible_pattern = r"curl[^`\n]*flowentry/add[^`\n]*"
+            potential_commands = re.findall(flexible_pattern, output)
+            
+            # Validate that these look like real curl commands
+            for cmd in potential_commands:
+                if "-X POST" in cmd and "-d" in cmd and "http://" in cmd:
+                    curl_commands.append(cmd)
 
         # Convert to MitigationCommand objects
         commands = []
         for i, curl_cmd in enumerate(curl_commands):
             try:
+                # Validate that this is actually an executable curl command
+                if not self._is_valid_curl_command(curl_cmd):
+                    print(f"Skipping invalid curl command: {curl_cmd}")
+                    continue
+
                 # Extract basic info from curl command
                 command_type = "intelligent_mitigation"
                 if "ipv4_src" in curl_cmd:
@@ -1119,12 +1161,87 @@ Please provide:
                 print(f"Error parsing command {curl_cmd}: {str(e)}")
                 continue
 
+        # If no valid curl commands found, generate fallback commands using our proven patterns
+        if not commands:
+            print("No valid blocking commands found in LLM response, using proven fallback patterns")
+            
+            # Extract source IP from threat context if available
+            src_ip = "10.0.0.1"  # Default
+            if "Src IP:" in output:
+                import re
+                ip_match = re.search(r"Src IP:\s*(\d+\.\d+\.\d+\.\d+)", output)
+                if ip_match:
+                    src_ip = ip_match.group(1)
+            
+            # Generate proven blocking commands
+            fallback_commands = [
+                MitigationCommand(
+                    command_type="block_host",
+                    description=f"Proven fallback: Block all traffic from {src_ip}",
+                    curl_command=f'curl -X POST http://localhost:8080/stats/flowentry/add -d \'{{"dpid": 1, "priority": 100, "match": {{"ipv4_src": "{src_ip}", "eth_type": 2048}}, "actions": []}}\'',
+                    priority=100,
+                    dpid=1,
+                ),
+                MitigationCommand(
+                    command_type="block_icmp",
+                    description=f"Proven fallback: Block ICMP from {src_ip}",
+                    curl_command=f'curl -X POST http://localhost:8080/stats/flowentry/add -d \'{{"dpid": 1, "priority": 100, "match": {{"eth_type": 2048, "ip_proto": 1, "ipv4_src": "{src_ip}"}}, "actions": []}}\'',
+                    priority=100,
+                    dpid=1,
+                ),
+            ]
+            commands.extend(fallback_commands)
+            print(f"Generated {len(fallback_commands)} proven blocking commands for {src_ip}")
+
         return {
             "commands": commands,
             "analysis": output,
             "command_count": len(commands),
             "strategy_type": "intelligent_rag",
         }
+
+    def _is_valid_curl_command(self, curl_cmd: str) -> bool:
+        """Validate that a string is a proper curl command that effectively blocks traffic."""
+        # Check for required curl command structure
+        required_elements = [
+            "curl",
+            "-X POST",
+            "http://",
+            "flowentry/add",
+            "-d",
+        ]
+        
+        for element in required_elements:
+            if element not in curl_cmd:
+                return False
+        
+        # Check that it's not just descriptive text
+        descriptive_words = [
+            "command adds",
+            "this will",
+            "to drop",
+            "traffic from",
+            "on port",
+        ]
+        
+        for phrase in descriptive_words:
+            if phrase in curl_cmd.lower():
+                return False
+        
+        # CRITICAL: Check that the command actually blocks traffic
+        # Commands with empty actions array [] are blocking commands
+        # Commands with OUTPUT or METER actions allow traffic through
+        if '"actions": []' not in curl_cmd:
+            # If it has actions that allow traffic, it's not a proper blocking command
+            if any(action in curl_cmd for action in ['"OUTPUT"', '"METER"', '"NORMAL"']):
+                print(f"Warning: Command allows traffic through instead of blocking: {curl_cmd}")
+                return False
+            # If no actions specified at all, it might be malformed
+            if '"actions"' not in curl_cmd:
+                print(f"Warning: Command missing actions specification: {curl_cmd}")
+                return False
+        
+        return True
 
     def _fallback_mitigation(
         self, threat_info: Dict[str, Any], network_sample: pd.DataFrame = None

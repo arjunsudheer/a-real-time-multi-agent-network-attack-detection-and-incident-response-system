@@ -132,9 +132,7 @@ class ReportPageGeneration:
             try:
                 topology_data = self.response_agent.get_topology_for_ui()
                 sample_info["topology"] = topology_data
-                print(
-                    f"Added topology data with {topology_data['stats']['total_nodes']} nodes"
-                )
+                            # Topology data added silently
             except Exception as e:
                 print(f"Error getting topology data: {str(e)}")
                 # Provide fallback topology data
@@ -169,7 +167,7 @@ class ReportPageGeneration:
                         f'cat:cs.CR AND (ti:"{traffic_type}" OR abs:"{traffic_type}")'
                     )
 
-                print(f"\nSearching ArXiv with query: {query}")
+                # Searching ArXiv with minimal logging
                 try:
                     # Use direct ArxivRetriever to get document objects instead of string results
                     from langchain_community.retrievers import ArxivRetriever
@@ -180,23 +178,17 @@ class ReportPageGeneration:
                         max_retries=3,
                     )
                     arxiv_results = arxiv_retriever.get_relevant_documents(query)
-                    print(f"Found {len(arxiv_results)} papers")
 
                     if not arxiv_results:
                         fallback_query = 'cat:cs.CR AND (ti:"network security" OR ti:"intrusion detection")'
-                        print(f"\nNo results, trying fallback query: {fallback_query}")
                         arxiv_results = arxiv_retriever.get_relevant_documents(
                             fallback_query
                         )
-                        print(f"Found {len(arxiv_results)} papers with fallback query")
                 except Exception as e:
                     print(f"Error in ArXiv search: {str(e)}")
                     arxiv_results = []
 
                 sample_info["arxiv_articles"] = parse_arxiv_results(arxiv_results)
-                print(
-                    f"Total papers found and parsed: {len(sample_info['arxiv_articles'])}"
-                )
 
             except Exception as e:
                 print(f"Error retrieving research papers: {str(e)}")
@@ -213,10 +205,9 @@ class ReportPageGeneration:
                 else:
                     product_query = f"{traffic_type} attack prevention"
 
-                print(f"\nGetting product recommendations for: {product_query}")
+                # Getting product recommendations with minimal logging
                 products = self.ra.get_llm_product_recommendation(product_query)
                 sample_info["products"] = products
-                print(f"Found {len(products)} product recommendations")
 
             except Exception as e:
                 print(f"Error getting product recommendations: {str(e)}")

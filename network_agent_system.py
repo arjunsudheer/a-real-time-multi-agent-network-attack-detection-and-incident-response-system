@@ -430,34 +430,55 @@ class NetworkAgentSystem:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    logging.info("Initializing Network Agent System...")
+    # Configure minimal logging while preserving LangChain agent logs
+    import logging
+    import warnings
+    
+    # Suppress warnings
+    warnings.filterwarnings("ignore")
+    
+    # Configure root logger with minimal output
+    logging.getLogger().setLevel(logging.WARNING)
+    
+    # Configure specific loggers to be less verbose
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("arxiv").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    
+    # Only show important system logs
+    system_logger = logging.getLogger("system")
+    system_logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    system_logger.addHandler(handler)
+    system_logger.propagate = False
+    
+    system_logger.info("Initializing Network Agent System...")
 
     parent_directory = Path("datasets/aci_iot_network_dataset_2023")
     nas = NetworkAgentSystem(parent_directory=parent_directory)
 
-    logging.info("Checking Ryu controller health endpoint...")
+    system_logger.info("Checking Ryu controller health endpoint...")
     try:
         ryu_response = requests.get("http://localhost:8080/stats/switches", timeout=5)
         if ryu_response.status_code == 200:
-            logging.info("Successfully connected to Ryu controller REST API.")
+            system_logger.info("Successfully connected to Ryu controller REST API.")
         else:
-            logging.warning(
+            system_logger.warning(
                 f"Ryu controller responded with status: {ryu_response.status_code}"
             )
     except Exception as e:
-        logging.error(f"Failed to connect to Ryu controller: {e}")
+        system_logger.error(f"Failed to connect to Ryu controller: {e}")
 
-    logging.info("Fetching live samples from Ryu adapter...")
+    system_logger.info("Fetching live samples from Ryu adapter...")
     try:
         live_samples_df = get_live_feature_vectors_from_ryu(dpid=2)
         if live_samples_df.empty:
-            logging.warning("No live samples received from Ryu adapter. Exiting.")
+            system_logger.warning("No live samples received from Ryu adapter. Exiting.")
         else:
-            logging.info(f"Received {len(live_samples_df)} live samples from Ryu.")
-            logging.debug("Live samples data:\n%s", live_samples_df.to_string())
+            system_logger.info(f"Received {len(live_samples_df)} live samples from Ryu.")
 
             # The 'Label' column in live_samples_df is a dummy for raw data.
             # We need the original features for the LabelingAgent if it's invoked.
@@ -466,12 +487,12 @@ if __name__ == "__main__":
                 columns=["Label"], errors="ignore"
             )
 
-            logging.info("Preprocessing live samples...")
+            system_logger.info("Preprocessing live samples...")
             # Preprocess before feeding to attack detection pipeline
             preprocessed_live_samples = nas.preprocess_inference_network_sample(
                 original_features_for_inference
             )
-            logging.info("Live samples preprocessed successfully.")
+            system_logger.info("Live samples preprocessed successfully.")
 
             try:
                 # Process each sample in real time
@@ -484,7 +505,7 @@ if __name__ == "__main__":
                     )
 
                     # Feed samples through attack detection pipeline
-                    logging.info(
+                    system_logger.info(
                         "Running inference attack detection pipeline on live samples..."
                     )
                     classification_results = nas.inference_attack_detection_pipeline(
@@ -492,7 +513,7 @@ if __name__ == "__main__":
                         original_sample=live_sample,
                         le=load_label_encoder(parent_directory=parent_directory),
                     )
-                    logging.info(
+                    system_logger.info(
                         f"Final prediction for live traffic: {classification_results['final_prediction']}"
                     )
 
@@ -506,7 +527,7 @@ if __name__ == "__main__":
                     RESET = "\033[0m"
 
                     print(f"\n{GREEN}{BOLD}🛡️  SECURITY RESPONSE ACTIVATED{RESET}")
-                    logging.info("Generating mitigation commands...")
+                    system_logger.info("Generating mitigation commands...")
                     mitigation_commands = (
                         nas.response_agent.generate_mitigation_commands(
                             classification_results=classification_results,
@@ -522,7 +543,7 @@ if __name__ == "__main__":
                         )
                         print(f"{GREEN}📋 Mitigation Summary:{RESET}")
                         print(f"{GREEN}{summary}{RESET}")
-                        logging.info(f"Mitigation Summary:\n{summary}")
+                        system_logger.info(f"Mitigation Summary:\n{summary}")
 
                         # Execute the mitigation commands
                         execution_results = (
@@ -533,7 +554,7 @@ if __name__ == "__main__":
                         print(
                             f"{GREEN}✅ Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully{RESET}"
                         )
-                        logging.info(
+                        system_logger.info(
                             f"Executed {execution_results['success_count']}/{execution_results['total_commands']} mitigation commands successfully"
                         )
 
@@ -542,14 +563,14 @@ if __name__ == "__main__":
                             print(
                                 f"{RED}⚠️  Failed to execute {len(execution_results['failed_commands'])} commands{RESET}"
                             )
-                            logging.warning(
+                            system_logger.warning(
                                 f"Failed to execute {len(execution_results['failed_commands'])} commands"
                             )
                     else:
                         print(
                             f"{GREEN}ℹ️  No mitigation commands generated for this attack{RESET}"
                         )
-                        logging.info("No mitigation commands generated for this attack")
+                        system_logger.info("No mitigation commands generated for this attack")
 
                     # Generate reports using the same response agent instance
                     rpg = ReportPageGeneration(response_agent=nas.response_agent)
@@ -559,12 +580,12 @@ if __name__ == "__main__":
                     rpg.serve_reports()
 
             except Exception as e:
-                logging.error(
+                system_logger.error(
                     f"An error occurred during live sample processing or inference: {e}",
                     exc_info=True,
                 )
     except Exception as e:
-        logging.error(f"Failed to fetch live samples from Ryu: {e}", exc_info=True)
+        system_logger.error(f"Failed to fetch live samples from Ryu: {e}", exc_info=True)
         live_samples_df = None
 
-    logging.info("Network Agent System processing finished.")
+    system_logger.info("Network Agent System processing finished.")

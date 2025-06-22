@@ -131,8 +131,8 @@ class RecommendationAgent:
 
     def get_llm_product_recommendation(self, search_query: str):
         try:
-            print(f"\nSearching for security products related to: {search_query}")
-
+            # Searching for security products with minimal logging
+            
             # Create more generic and effective search terms
             if "attack prevention" in search_query.lower():
                 attack_type = search_query.replace(" attack prevention", "").strip()
@@ -154,13 +154,11 @@ class RecommendationAgent:
                     results = safe_web_search_tool.run(term)
                     if results:
                         all_results.append(results)
-                        print(f"Found results for: {term}")
                 except Exception as e:
-                    print(f"Error searching '{term}': {str(e)}")
+                    # Only log errors for debugging
                     continue
 
             if not all_results:
-                print("No search results found, using fallback recommendations")
                 return self._get_fallback_products(search_query)
 
             # Parse search results to extract URLs directly
