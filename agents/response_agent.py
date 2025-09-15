@@ -148,7 +148,7 @@ class ResponseAgent:
         """
         llm = GoogleGenerativeAI(
             model="gemini-2.0-flash",
-            google_api_key=os.getenv("GOOGLE_API_KEY", "AIzaSyC72eGdAEHU9ZBAhXJWAg6b8fCQSRmgDBU"),
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0.3,
         )
 
@@ -1125,7 +1125,7 @@ Please provide:
             # Look for any curl command that contains flowentry/add
             flexible_pattern = r"curl[^`\n]*flowentry/add[^`\n]*"
             potential_commands = re.findall(flexible_pattern, output)
-            
+
             # Validate that these look like real curl commands
             for cmd in potential_commands:
                 if "-X POST" in cmd and "-d" in cmd and "http://" in cmd:
@@ -1163,16 +1163,19 @@ Please provide:
 
         # If no valid curl commands found, generate fallback commands using our proven patterns
         if not commands:
-            print("No valid blocking commands found in LLM response, using proven fallback patterns")
-            
+            print(
+                "No valid blocking commands found in LLM response, using proven fallback patterns"
+            )
+
             # Extract source IP from threat context if available
             src_ip = "10.0.0.1"  # Default
             if "Src IP:" in output:
                 import re
+
                 ip_match = re.search(r"Src IP:\s*(\d+\.\d+\.\d+\.\d+)", output)
                 if ip_match:
                     src_ip = ip_match.group(1)
-            
+
             # Generate proven blocking commands
             fallback_commands = [
                 MitigationCommand(
@@ -1191,7 +1194,9 @@ Please provide:
                 ),
             ]
             commands.extend(fallback_commands)
-            print(f"Generated {len(fallback_commands)} proven blocking commands for {src_ip}")
+            print(
+                f"Generated {len(fallback_commands)} proven blocking commands for {src_ip}"
+            )
 
         return {
             "commands": commands,
@@ -1210,11 +1215,11 @@ Please provide:
             "flowentry/add",
             "-d",
         ]
-        
+
         for element in required_elements:
             if element not in curl_cmd:
                 return False
-        
+
         # Check that it's not just descriptive text
         descriptive_words = [
             "command adds",
@@ -1223,24 +1228,28 @@ Please provide:
             "traffic from",
             "on port",
         ]
-        
+
         for phrase in descriptive_words:
             if phrase in curl_cmd.lower():
                 return False
-        
+
         # CRITICAL: Check that the command actually blocks traffic
         # Commands with empty actions array [] are blocking commands
         # Commands with OUTPUT or METER actions allow traffic through
         if '"actions": []' not in curl_cmd:
             # If it has actions that allow traffic, it's not a proper blocking command
-            if any(action in curl_cmd for action in ['"OUTPUT"', '"METER"', '"NORMAL"']):
-                print(f"Warning: Command allows traffic through instead of blocking: {curl_cmd}")
+            if any(
+                action in curl_cmd for action in ['"OUTPUT"', '"METER"', '"NORMAL"']
+            ):
+                print(
+                    f"Warning: Command allows traffic through instead of blocking: {curl_cmd}"
+                )
                 return False
             # If no actions specified at all, it might be malformed
             if '"actions"' not in curl_cmd:
                 print(f"Warning: Command missing actions specification: {curl_cmd}")
                 return False
-        
+
         return True
 
     def _fallback_mitigation(
