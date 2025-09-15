@@ -1,6 +1,6 @@
 # cyberwarrior-llm-challenge
 
-This repository is dedicated to our project on LLM-based network attack detection and response for the CyberWarrior 2025 LLM Challenge.
+This repository is dedicated to our source code for our research paper titled [Demo: A Real-time Multi-Agent Network Attack Detection and Incident Response System](https://ieeexplore.ieee.org/abstract/document/11133641). We presented our research work at the Silicon Valley Cybersecurity Conference 2025, and won first place in the CyberWarrior 2025 LLM Challenge.
 
 Please follow this guide to run our implementation. The code for the demo is on the **main** branch. We use the Gemini API.
 

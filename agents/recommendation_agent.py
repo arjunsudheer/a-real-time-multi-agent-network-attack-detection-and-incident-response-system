@@ -76,9 +76,7 @@ class RecommendationAgent:
     def __initialize_llm(self):
         self.llm = GoogleGenerativeAI(
             model="gemini-2.0-flash",
-            google_api_key=os.getenv(
-                "GOOGLE_API_KEY", "AIzaSyC72eGdAEHU9ZBAhXJWAg6b8fCQSRmgDBU"
-            ),
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0.3,
         )
 
@@ -132,7 +130,7 @@ class RecommendationAgent:
     def get_llm_product_recommendation(self, search_query: str):
         try:
             # Searching for security products with minimal logging
-            
+
             # Create more generic and effective search terms
             if "attack prevention" in search_query.lower():
                 attack_type = search_query.replace(" attack prevention", "").strip()
